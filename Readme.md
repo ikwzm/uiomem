@@ -28,6 +28,7 @@ Some platforms allow to specify them in the device tree.
 ## Supported platforms
 
 * OS : Linux Kernel Version 4.19, 5.4 (the author tested on 5.4).
+* CPU: ARMv7 Cortex-A9 (Xilinx ZYNQ / Altera CycloneV SoC)
 * CPU: ARM64 Cortex-A53 (Xilinx ZYNQ UltraScale+ MPSoC)
 
 # Usage
