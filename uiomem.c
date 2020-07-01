@@ -65,7 +65,7 @@ MODULE_DESCRIPTION("User space mappable io-memory device driver");
 MODULE_AUTHOR("ikwzm");
 MODULE_LICENSE("Dual BSD/GPL");
 
-#define DRIVER_VERSION     "0.0.2"
+#define DRIVER_VERSION     "0.0.3"
 #define DRIVER_NAME        "uiomem"
 #define DEVICE_NAME_FORMAT "uiomem%d"
 #define DEVICE_MAX_NUM      256
@@ -152,12 +152,10 @@ enum uiomem_direction {
 #define SYNC_MODE_MAX           (0x03)
 #define SYNC_ALWAYS             (0x04)
 
-
-#if (defined(CONFIG_ARM64))
 /**
  * DOC: Data Cache Clean/Invalid for arm64 architecture.
  *
- * This section defines mem_sync_sinfle_for_cpu() and mem_sync_single_for_device().
+ * This section defines arch_sync_for_cpu() and arch_sync_for_dev().
  *
  * * arm64_read_dcache_line_size()     - read data cache line size of arm64.
  * * arm64_inval_dcache_area()         - invalid data cache.
@@ -165,6 +163,7 @@ enum uiomem_direction {
  * * arch_sync_for_cpu()               - _uiomem_sync_for_cpu() for arm64
  * * arch_sync_for_dev()               - _uiomem_sync_for_dev() for arm64
  */
+#if (defined(CONFIG_ARM64))
 static inline u64  arm64_read_dcache_line_size(void)
 {
     u64       ctr;
@@ -219,6 +218,79 @@ static void arch_sync_for_dev(void* virt_start, phys_addr_t phys_start, size_t s
         arm64_inval_dcache_area(virt_start, size);
     else
         arm64_clean_dcache_area(virt_start, size);
+}
+#endif
+
+/**
+ * DOC: Data Cache Clean/Invalid for armv7 architecture.
+ *
+ * This section defines arch_sync_for_cpu() and arch_sync_for_dev().
+ *
+ * * armv7_read_dcache_line_size()     - read data cache line size of armv7.
+ * * armv7_inval_dcache_area()         - invalid data cache.
+ * * armv7_clean_dcache_area()         - clean(flush and invalidiate) data cache.
+ * * arch_sync_for_cpu()               - _uiomem_sync_for_cpu() for armv7
+ * * arch_sync_for_dev()               - _uiomem_sync_for_dev() for armv7
+ */
+#if (defined(CONFIG_ARM) && defined(CONFIG_CPU_V7))
+static inline u32  armv7_read_dcache_line_size(void)
+{
+    u32       ctr;
+    u32       dcache_line_size;
+    const u32 bytes_per_word = 4;
+    asm volatile ("mrc	p15, 0, %0, c0, c0, 1": "=r"(ctr) : : );
+    dcache_line_size = (ctr >> 16) & 0xF;
+    return (bytes_per_word << dcache_line_size);
+}
+static inline void armv7_inval_dcache_area(void* start, size_t size)
+{
+    u32   vaddr           = (u32)start;
+    u32   __end           = (u32)start + size;
+    u32   cache_line_size = armv7_read_dcache_line_size();
+    u32   cache_line_mask = cache_line_size - 1;
+    if ((__end & cache_line_mask) != 0) {
+        __end &= ~cache_line_mask;
+        asm volatile ("mcr	p15, 0, %0, c7, c14, 1" :  : "r"(__end) : );
+    }
+    if ((vaddr & cache_line_mask) != 0) {
+        vaddr &= ~cache_line_mask;
+        asm volatile ("mcr	p15, 0, %0, c7, c14, 1" :  : "r"(vaddr) : );
+    }
+    while (vaddr < __end) {
+        asm volatile ("mcr	p15, 0, %0, c7, c6,  1" :  : "r"(vaddr) : );
+        vaddr += cache_line_size;
+    }
+    asm volatile ("dsb	st"  :  :  : );
+}
+static inline void armv7_clean_dcache_area(void* start, size_t size)
+{
+    u32   vaddr           = (u32)start;
+    u32   __end           = (u32)start + size;
+    u32   cache_line_size = armv7_read_dcache_line_size();
+    u32   cache_line_mask = cache_line_size - 1;
+    vaddr &= ~cache_line_mask;
+    while (vaddr < __end) {
+        asm volatile ("mcr	p15, 0, %0, c7, c10, 1"  :  : "r"(vaddr) : );
+        vaddr += cache_line_size;
+    }
+    asm volatile ("dsb	st"  :  :  : );
+}
+static void arch_sync_for_cpu(void* virt_start, phys_addr_t phys_start, size_t size, enum uiomem_direction direction)
+{
+    if (direction != UIOMEM_WRITE_ONLY) {
+        armv7_inval_dcache_area(virt_start, size);
+        outer_inv_range(phys_start, phys_start + size);
+    }
+}
+static void arch_sync_for_dev(void* virt_start, phys_addr_t phys_start, size_t size, enum uiomem_direction direction)
+{
+    if (direction == UIOMEM_READ_ONLY) {
+        armv7_inval_dcache_area(virt_start, size);
+        outer_inv_range(phys_start, phys_start + size);
+    } else {
+        armv7_clean_dcache_area(virt_start, size);
+        outer_clean_range(phys_start, phys_start + size);
+    }
 }
 #endif
 
@@ -976,12 +1048,12 @@ static int uiomem_device_probe(struct device *dev, struct resource* res)
         goto failed;
     }
     if ((resource_size(res) & ~PAGE_MASK) != 0) {
-        dev_err(dev, "invalid resource size(=%zu), size must be page alignemnt(=%zu).\n", (size_t)resource_size(res), PAGE_SIZE);
+        dev_err(dev, "invalid resource size(=%zu), size must be page alignemnt(=%zu).\n", (size_t)resource_size(res), (size_t)PAGE_SIZE);
         retval = -EINVAL;
         goto failed;
     }
     if ((res->start & ~PAGE_MASK) != 0) {
-        dev_err(dev, "invalid resource addr(=%pad), addr must be page alignemnt(=%zu).\n", &res->start, PAGE_SIZE);
+        dev_err(dev, "invalid resource addr(=%pad), addr must be page alignemnt(=%zu).\n", &res->start, (size_t)PAGE_SIZE);
         retval = -EINVAL;
         goto failed;
     }
