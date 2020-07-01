@@ -65,7 +65,7 @@ MODULE_DESCRIPTION("User space mappable io-memory device driver");
 MODULE_AUTHOR("ikwzm");
 MODULE_LICENSE("Dual BSD/GPL");
 
-#define DRIVER_VERSION     "0.0.3"
+#define DRIVER_VERSION     "0.0.4"
 #define DRIVER_NAME        "uiomem"
 #define DEVICE_NAME_FORMAT "uiomem%d"
 #define DEVICE_MAX_NUM      256
@@ -280,6 +280,20 @@ static void arch_sync_for_cpu(void* virt_start, phys_addr_t phys_start, size_t s
     if (direction != UIOMEM_WRITE_ONLY) {
         armv7_inval_dcache_area(virt_start, size);
         outer_inv_range(phys_start, phys_start + size);
+        if (size >= PAGE_SIZE) {
+            unsigned int  offset = phys_start & (PAGE_SIZE - 1);
+            unsigned long pfn    = (phys_start-offset) >> PAGE_SHIFT;
+            size_t        left   = size;
+            if (offset) {
+                pfn++;
+                left -= PAGE_SIZE - offset;
+            }
+            while (left >= PAGE_SIZE) {
+                struct page *page = pfn_to_page(pfn++);
+                set_bit(PG_dcache_clean, &page->flags);
+                left -= PAGE_SIZE;
+            }
+        }
     }
 }
 static void arch_sync_for_dev(void* virt_start, phys_addr_t phys_start, size_t size, enum uiomem_direction direction)
