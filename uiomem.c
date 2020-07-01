@@ -65,7 +65,7 @@ MODULE_DESCRIPTION("User space mappable io-memory device driver");
 MODULE_AUTHOR("ikwzm");
 MODULE_LICENSE("Dual BSD/GPL");
 
-#define DRIVER_VERSION     "0.0.1"
+#define DRIVER_VERSION     "0.0.2"
 #define DRIVER_NAME        "uiomem"
 #define DEVICE_NAME_FORMAT "uiomem%d"
 #define DEVICE_MAX_NUM      256
@@ -436,7 +436,7 @@ DEF_ATTR_SHOW(sync_owner     , "%d\n"    , this->sync_owner                     
 DEF_ATTR_SHOW(sync_for_cpu   , "%llu\n"  , this->sync_for_cpu                             );
 DEF_ATTR_SET( sync_for_cpu               , 0, U64_MAX,  NO_ACTION, uiomem_sync_for_cpu    );
 DEF_ATTR_SHOW(sync_for_device, "%llu\n"  , this->sync_for_device                          );
-DEF_ATTR_SET( sync_for_device            , 0, U64_MAX,  NO_ACTION, uiomem_sync_for_device);
+DEF_ATTR_SET( sync_for_device            , 0, U64_MAX,  NO_ACTION, uiomem_sync_for_device );
 
 static struct device_attribute uiomem_device_attrs[] = {
   __ATTR(driver_version , 0444, uiomem_show_driver_version  , NULL                        ),
@@ -734,7 +734,10 @@ static const struct file_operations uiomem_device_file_ops = {
  * * uiomem_device_setup()     - Setup the uiomem device data.
  * * uiomem_device_info()      - Print infomation the uiomem device data.
  * * uiomem_device_destroy()   - Destroy the uiomem device data.
+ * * uiomem_device_probe()     - Probe call for the device driver.
+ * * uiomem_device_remove()    - Remove uiomem device data from device driver.
  */
+
 static DEFINE_IDA(uiomem_device_ida);
 static dev_t      uiomem_device_number = 0;
 
@@ -913,6 +916,196 @@ static int uiomem_device_destroy(struct uiomem_device_data* this)
     ida_simple_remove(&uiomem_device_ida, MINOR(this->device_number));
     kfree(this);
     return 0;
+}
+
+/**
+ * uiomem_device_remove()   - Remove uiomem device data from device driver.
+ * @dev:        handle to the device structure.
+ * Return:      Success(=0) or error status(<0).
+ */
+static int uiomem_device_remove(struct device *dev)
+{
+    struct uiomem_device_data* this   = dev_get_drvdata(dev);
+    int                        retval = 0;
+
+    if (this != NULL) {
+        retval = uiomem_device_destroy(this);
+        dev_set_drvdata(dev, NULL);
+    } else {
+        retval = -ENODEV;
+    }
+    return retval;
+}
+
+/**
+ * uiomem_device_probe() -  Probe call for the device driver.
+ * @dev:        handle to the device structure.
+ * @res:        handle to the resource structure.
+ * Return:      Success(=0) or error status(<0).
+ *
+ * It does all the memory allocation and registration for the device.
+ */
+static int uiomem_device_probe(struct device *dev, struct resource* res)
+{
+    int                         retval       = 0;
+    unsigned int                u32_value    = 0;
+    int                         minor_number = -1;
+    struct resource*            mem_resource;
+    struct uiomem_device_data*  device_data  = NULL;
+    const char*                 device_name  = NULL;
+
+    /*
+     * check handle to the resource structure.
+     */
+    if (IS_ERR_OR_NULL(res)) {
+        dev_err(dev, "can not found resource\n");
+        retval = -EINVAL;
+        goto failed;
+    }
+    if (resource_size(res) == 0) {
+        dev_err(dev, "invalid resource size(=%zu).\n", (size_t)resource_size(res));
+        retval = -EINVAL;
+        goto failed;
+    }
+    if ((resource_size(res) & ~PAGE_MASK) != 0) {
+        dev_err(dev, "invalid resource size(=%zu), size must be page alignemnt(=%zu).\n", (size_t)resource_size(res), PAGE_SIZE);
+        retval = -EINVAL;
+        goto failed;
+    }
+    if ((res->start & ~PAGE_MASK) != 0) {
+        dev_err(dev, "invalid resource addr(=%pad), addr must be page alignemnt(=%zu).\n", &res->start, PAGE_SIZE);
+        retval = -EINVAL;
+        goto failed;
+    }
+    if (pfn_valid(PFN_DOWN(res->start)) || pfn_valid(PFN_DOWN(res->end)))
+    {
+        dev_err(dev, "invalid resource addr(=%pad) size(=%zu), this region is used by the kernel.\n", &res->start, (size_t)resource_size(res));
+        retval = -EINVAL;
+        goto failed;
+    }
+    /*
+     * minor-number property
+     */
+    if        (device_property_read_u32(dev, "minor-number", &u32_value) == 0) {
+        minor_number = u32_value;
+    } else if (of_property_read_u32(dev->of_node, "minor-number", &u32_value) == 0) {
+        minor_number = u32_value;
+    } else {
+        minor_number = -1;
+    }
+    /*
+     * device-name property
+     */
+    if (device_property_read_string(dev, "device-name", &device_name) != 0)
+        device_name = of_get_property(dev->of_node, "device-name", NULL);
+
+    if (IS_ERR_OR_NULL(device_name)) {
+        if (minor_number < 0)
+            device_name = dev_name(dev);
+        else
+            device_name = NULL;
+    }
+    /*
+     * uiomem_device_create()
+     */
+    device_data = uiomem_device_create(device_name, dev, minor_number);
+    if (IS_ERR_OR_NULL(device_data)) {
+        retval = PTR_ERR(device_data);
+        dev_err(dev, "driver create failed. return=%d.\n", retval);
+        device_data = NULL;
+        retval = (retval == 0) ? -EINVAL : retval;
+        goto failed;
+    }
+    dev_set_drvdata(dev, device_data);
+    /*
+     * set mem_resource
+     */
+    if (of_property_read_bool(dev->of_node, "shareable")) {
+        mem_resource = res;
+        device_data->mem_region = NULL;
+    } else {
+        mem_resource = request_mem_region(res->start, resource_size(res), dev_name(dev));
+        if (mem_resource == NULL) {
+            dev_err(dev, "request_mem_region failed.\n");
+            retval = -EBUSY;
+            goto failed;
+        }
+        device_data->mem_region = mem_resource;
+    }
+    /*
+     * set phys_addr and size
+     */
+    device_data->phys_addr = mem_resource->start;
+    device_data->size      = (size_t)resource_size(mem_resource);
+    /*
+     * sync-mode property
+     */
+    if (of_property_read_u32(dev->of_node, "sync-mode", &u32_value) == 0) {
+        if ((u32_value < SYNC_MODE_MIN) || (u32_value > SYNC_MODE_MAX)) {
+            dev_err(dev, "invalid sync-mode property value=%d\n", u32_value);
+            goto failed;
+        }
+        device_data->sync_mode &= ~SYNC_MODE_MASK;
+        device_data->sync_mode |= (int)u32_value;
+    }
+    /*
+     * sync-always property
+     */
+    if (of_property_read_bool(dev->of_node, "sync-always")) {
+        device_data->sync_mode |= SYNC_ALWAYS;
+    }
+    /*
+     * sync-direction property
+     */
+    if (of_property_read_u32(dev->of_node, "sync-direction", &u32_value) == 0) {
+        if (u32_value > 2) {
+            dev_err(dev, "invalid sync-direction property value=%d\n", u32_value);
+            goto failed;
+        }
+        device_data->sync_direction = (int)u32_value;
+    }
+    /*
+     * sync-offset property
+     */
+    if (of_property_read_u32(dev->of_node, "sync-offset", &u32_value) == 0) {
+        if (u32_value >= device_data->size) {
+            dev_err(dev, "invalid sync-offset property value=%d\n", u32_value);
+            goto failed;
+        }
+        device_data->sync_offset = (int)u32_value;
+    }
+    /*
+     * sync-size property
+     */
+    if (of_property_read_u32(dev->of_node, "sync-size", &u32_value) == 0) {
+        if (device_data->sync_offset + u32_value > device_data->size) {
+            dev_err(dev, "invalid sync-size property value=%d\n", u32_value);
+            goto failed;
+        }
+        device_data->sync_size = (size_t)u32_value;
+    } else {
+        device_data->sync_size = device_data->size;
+    }
+    /*
+     * uiomem_device_setup()
+     */
+    retval = uiomem_device_setup(device_data);
+    if (retval) {
+        dev_err(dev, "driver setup failed. return=%d\n", retval);
+        goto failed;
+    }
+
+    if (info_enable) {
+        uiomem_device_info(device_data);
+    }
+
+    return 0;
+
+failed:
+    if (device_data != NULL)
+        (void)uiomem_device_remove(dev);
+
+    return retval;
 }
 
 /**
@@ -1128,205 +1321,6 @@ static void uiomem_static_device_create_all(void)
 }
 
 /**
- * DOC: Uiomem Device Driver probe/remove section.
- *
- * This section defines the uiomem device driver.
- *
- * * uiomem_device_probe()  - Probe  call for the device driver.
- * * uiomem_device_remove() - Remove call for the device driver.
- */
-
-/**
- * uiomem_device_remove()   - Remove uiomem device driver.
- * @dev:        handle to the device structure.
- * @devdata     Pointer to the uiomem device data structure.
- * Return:      Success(=0) or error status(<0).
- */
-static int uiomem_device_remove(struct device *dev, struct uiomem_device_data *devdata)
-{
-    int retval = 0;
-
-    if (devdata != NULL) {
-        retval = uiomem_device_destroy(devdata);
-        dev_set_drvdata(dev, NULL);
-    } else {
-        retval = -ENODEV;
-    }
-    return retval;
-}
-
-/**
- * uiomem_device_probe() -  Probe call for the device driver.
- * @dev:        handle to the device structure.
- * @res:        handle to the resource structure.
- * Return:      Success(=0) or error status(<0).
- *
- * It does all the memory allocation and registration for the device.
- */
-static int uiomem_device_probe(struct device *dev, struct resource* res)
-{
-    int                         retval       = 0;
-    unsigned int                u32_value    = 0;
-    int                         minor_number = -1;
-    struct resource*            mem_resource;
-    struct uiomem_device_data*  device_data  = NULL;
-    const char*                 device_name  = NULL;
-
-    /*
-     * check handle to the resource structure.
-     */
-    if (IS_ERR_OR_NULL(res)) {
-        dev_err(dev, "can not found resource\n");
-        retval = -EINVAL;
-        goto failed;
-    }
-    if (resource_size(res) == 0) {
-        dev_err(dev, "invalid resource size(=%zu).\n", (size_t)resource_size(res));
-        retval = -EINVAL;
-        goto failed;
-    }
-    if ((resource_size(res) & ~PAGE_MASK) != 0) {
-        dev_err(dev, "invalid resource size(=%zu), size must be page alignemnt(=%zu).\n", (size_t)resource_size(res), PAGE_SIZE);
-        retval = -EINVAL;
-        goto failed;
-    }
-    if ((res->start & ~PAGE_MASK) != 0) {
-        dev_err(dev, "invalid resource addr(=%pad), addr must be page alignemnt(=%zu).\n", &res->start, PAGE_SIZE);
-        retval = -EINVAL;
-        goto failed;
-    }
-    if (pfn_valid(PFN_DOWN(res->start)) || pfn_valid(PFN_DOWN(res->end)))
-    {
-        dev_err(dev, "invalid resource addr(=%pad) size(=%zu), this region is used by the kernel.\n", &res->start, (size_t)resource_size(res));
-        retval = -EINVAL;
-        goto failed;
-    }
-    /*
-     * minor-number property
-     */
-    if        (device_property_read_u32(dev, "minor-number", &u32_value) == 0) {
-        minor_number = u32_value;
-    } else if (of_property_read_u32(dev->of_node, "minor-number", &u32_value) == 0) {
-        minor_number = u32_value;
-    } else {
-        minor_number = -1;
-    }
-    /*
-     * device-name property
-     */
-    if (device_property_read_string(dev, "device-name", &device_name) != 0)
-        device_name = of_get_property(dev->of_node, "device-name", NULL);
-
-    if (IS_ERR_OR_NULL(device_name)) {
-        if (minor_number < 0)
-            device_name = dev_name(dev);
-        else
-            device_name = NULL;
-    }
-    /*
-     * uiomem_device_create()
-     */
-    device_data = uiomem_device_create(device_name, dev, minor_number);
-    if (IS_ERR_OR_NULL(device_data)) {
-        retval = PTR_ERR(device_data);
-        dev_err(dev, "driver create failed. return=%d.\n", retval);
-        device_data = NULL;
-        retval = (retval == 0) ? -EINVAL : retval;
-        goto failed;
-    }
-    dev_set_drvdata(dev, device_data);
-    /*
-     * set mem_resource
-     */
-    if (of_property_read_bool(dev->of_node, "shareable")) {
-        mem_resource = res;
-        device_data->mem_region = NULL;
-    } else {
-        mem_resource = request_mem_region(res->start, resource_size(res), dev_name(dev));
-        if (mem_resource == NULL) {
-            dev_err(dev, "request_mem_region failed.\n");
-            retval = -EBUSY;
-            goto failed;
-        }
-        device_data->mem_region = mem_resource;
-    }
-    /*
-     * set phys_addr and size
-     */
-    device_data->phys_addr = mem_resource->start;
-    device_data->size      = (size_t)resource_size(mem_resource);
-    /*
-     * sync-mode property
-     */
-    if (of_property_read_u32(dev->of_node, "sync-mode", &u32_value) == 0) {
-        if ((u32_value < SYNC_MODE_MIN) || (u32_value > SYNC_MODE_MAX)) {
-            dev_err(dev, "invalid sync-mode property value=%d\n", u32_value);
-            goto failed;
-        }
-        device_data->sync_mode &= ~SYNC_MODE_MASK;
-        device_data->sync_mode |= (int)u32_value;
-    }
-    /*
-     * sync-always property
-     */
-    if (of_property_read_bool(dev->of_node, "sync-always")) {
-        device_data->sync_mode |= SYNC_ALWAYS;
-    }
-    /*
-     * sync-direction property
-     */
-    if (of_property_read_u32(dev->of_node, "sync-direction", &u32_value) == 0) {
-        if (u32_value > 2) {
-            dev_err(dev, "invalid sync-direction property value=%d\n", u32_value);
-            goto failed;
-        }
-        device_data->sync_direction = (int)u32_value;
-    }
-    /*
-     * sync-offset property
-     */
-    if (of_property_read_u32(dev->of_node, "sync-offset", &u32_value) == 0) {
-        if (u32_value >= device_data->size) {
-            dev_err(dev, "invalid sync-offset property value=%d\n", u32_value);
-            goto failed;
-        }
-        device_data->sync_offset = (int)u32_value;
-    }
-    /*
-     * sync-size property
-     */
-    if (of_property_read_u32(dev->of_node, "sync-size", &u32_value) == 0) {
-        if (device_data->sync_offset + u32_value > device_data->size) {
-            dev_err(dev, "invalid sync-size property value=%d\n", u32_value);
-            goto failed;
-        }
-        device_data->sync_size = (size_t)u32_value;
-    } else {
-        device_data->sync_size = device_data->size;
-    }
-    /*
-     * uiomem_device_setup()
-     */
-    retval = uiomem_device_setup(device_data);
-    if (retval) {
-        dev_err(dev, "driver setup failed. return=%d\n", retval);
-        goto failed;
-    }
-
-    if (info_enable) {
-        uiomem_device_info(device_data);
-    }
-
-    return 0;
-
-failed:
-    if (device_data != NULL)
-        (void)uiomem_device_remove(dev, device_data);
-
-    return retval;
-}
-
-/**
  * DOC: Uiomem Platform Driver
  *
  * This section defines the uiomem platform driver.
@@ -1369,12 +1363,11 @@ static int uiomem_platform_driver_probe(struct platform_device *pdev)
  */
 static int uiomem_platform_driver_remove(struct platform_device *pdev)
 {
-    struct uiomem_device_data* this   = dev_get_drvdata(&pdev->dev);
-    int                         retval = 0;
+    int retval = 0;
 
     dev_dbg(&pdev->dev, "driver remove start.\n");
 
-    retval = uiomem_device_remove(&pdev->dev, this);
+    retval = uiomem_device_remove(&pdev->dev);
 
     if (info_enable) {
         dev_info(&pdev->dev, "driver removed.\n");
