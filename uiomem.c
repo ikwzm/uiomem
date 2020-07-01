@@ -138,6 +138,7 @@ enum uiomem_direction {
     UIOMEM_READ_ONLY  = 2,
     UIOMEM_NONE       = 3,
 };
+#define DIR_MAX UIOMEM_READ_ONLY
 
 /**
  * sync_mode(synchronous mode) value
@@ -431,7 +432,7 @@ DEF_ATTR_SET( sync_offset                , 0, U64_MAX,  NO_ACTION, NO_ACTION    
 DEF_ATTR_SHOW(sync_size      , "%zu\n"   , this->sync_size                                );
 DEF_ATTR_SET( sync_size                  , 0, SIZE_MAX, NO_ACTION, NO_ACTION              );
 DEF_ATTR_SHOW(sync_direction , "%d\n"    , this->sync_direction                           );
-DEF_ATTR_SET( sync_direction             , 0, 2,        NO_ACTION, NO_ACTION              );
+DEF_ATTR_SET( sync_direction             , 0, DIR_MAX,  NO_ACTION, NO_ACTION              );
 DEF_ATTR_SHOW(sync_owner     , "%d\n"    , this->sync_owner                               );
 DEF_ATTR_SHOW(sync_for_cpu   , "%llu\n"  , this->sync_for_cpu                             );
 DEF_ATTR_SET( sync_for_cpu               , 0, U64_MAX,  NO_ACTION, uiomem_sync_for_cpu    );
@@ -860,19 +861,26 @@ static struct uiomem_device_data* uiomem_device_create(const char* name, struct 
 /**
  * uiomem_device_setup() - Setup the uiomem device data.
  * @this:       Pointer to the uiomem device data.
+ * @res:        handle to the resource structure.
  * Return:      Success(=0) or error status(<0).
  */
-static int uiomem_device_setup(struct uiomem_device_data* this)
+static int uiomem_device_setup(struct uiomem_device_data* this, struct resource* res)
 {
     if (!this)
         return -ENODEV;
     /*
+     * setup mem_region, phys_addr, size
+     */
+    this->mem_region = res;
+    this->phys_addr  = res->start;
+    this->size       = (size_t)resource_size(res);
+    /*
      * setup virtual address
      */
-    this->virt_addr  = (void*)ioremap_cache(this->phys_addr, this->size);
+    this->virt_addr = (void*)ioremap_cache(this->phys_addr, this->size);
     if (IS_ERR_OR_NULL(this->virt_addr)) {
         int retval = PTR_ERR(this->virt_addr);
-        printk(KERN_ERR "ioremap_cache(addr=%pad,size=%zu) failed. return(%d)\n", &this->phys_addr, this->size, retval);
+        dev_err(this->sys_dev, "ioremap_cache(addr=%pad,size=%zu) failed. return(%d)\n", &this->phys_addr, this->size, retval);
         this->virt_addr = NULL;
         return (retval == 0) ? -ENOMEM : retval;
     }
@@ -1030,13 +1038,7 @@ static int uiomem_device_probe(struct device *dev, struct resource* res)
             retval = -EBUSY;
             goto failed;
         }
-        device_data->mem_region = mem_resource;
     }
-    /*
-     * set phys_addr and size
-     */
-    device_data->phys_addr = mem_resource->start;
-    device_data->size      = (size_t)resource_size(mem_resource);
     /*
      * sync-mode property
      */
@@ -1058,7 +1060,7 @@ static int uiomem_device_probe(struct device *dev, struct resource* res)
      * sync-direction property
      */
     if (of_property_read_u32(dev->of_node, "sync-direction", &u32_value) == 0) {
-        if (u32_value > 2) {
+        if (u32_value > DIR_MAX) {
             dev_err(dev, "invalid sync-direction property value=%d\n", u32_value);
             goto failed;
         }
@@ -1068,7 +1070,7 @@ static int uiomem_device_probe(struct device *dev, struct resource* res)
      * sync-offset property
      */
     if (of_property_read_u32(dev->of_node, "sync-offset", &u32_value) == 0) {
-        if (u32_value >= device_data->size) {
+        if (u32_value >= resource_size(mem_resource)) {
             dev_err(dev, "invalid sync-offset property value=%d\n", u32_value);
             goto failed;
         }
@@ -1078,18 +1080,18 @@ static int uiomem_device_probe(struct device *dev, struct resource* res)
      * sync-size property
      */
     if (of_property_read_u32(dev->of_node, "sync-size", &u32_value) == 0) {
-        if (device_data->sync_offset + u32_value > device_data->size) {
+        if (device_data->sync_offset + u32_value > resource_size(mem_resource)) {
             dev_err(dev, "invalid sync-size property value=%d\n", u32_value);
             goto failed;
         }
         device_data->sync_size = (size_t)u32_value;
     } else {
-        device_data->sync_size = device_data->size;
+        device_data->sync_size = (size_t)(resource_size(mem_resource) - device_data->sync_offset);
     }
     /*
      * uiomem_device_setup()
      */
-    retval = uiomem_device_setup(device_data);
+    retval = uiomem_device_setup(device_data, mem_resource);
     if (retval) {
         dev_err(dev, "driver setup failed. return=%d\n", retval);
         goto failed;
@@ -1131,7 +1133,7 @@ struct uiomem_platform_device {
 };
 
 /**
- * uiomem_static_device_list     - list of uiomem static device structure.
+ * uiomem_static_device_list     - list of uiomem platform device structure.
  * uiomem_platform_device_sem    - semaphore of uiomem platform device list.
  */
 static struct list_head uiomem_platform_device_list;
