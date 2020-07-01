@@ -1,7 +1,11 @@
 uiomem(User space mappable I/O Memory)
 ==================================================================================
 
-This project is under development.
+**This project is under development.**
+
+See the develop branch for this project for details.
+
+https://github.com/ikwzm/uiomem/tree/develop
 
 # Overview
 
