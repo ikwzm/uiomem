@@ -65,7 +65,7 @@ MODULE_DESCRIPTION("User space mappable io-memory device driver");
 MODULE_AUTHOR("ikwzm");
 MODULE_LICENSE("Dual BSD/GPL");
 
-#define DRIVER_VERSION     "0.0.3"
+#define DRIVER_VERSION     "0.0.4"
 #define DRIVER_NAME        "uiomem"
 #define DEVICE_NAME_FORMAT "uiomem%d"
 #define DEVICE_MAX_NUM      256
@@ -687,16 +687,14 @@ static ssize_t uiomem_device_file_read(struct file* file, char __user* buff, siz
     virt_addr = this->virt_addr + *ppos;
     xfer_size = (*ppos + count >= this->size) ? this->size - *ppos : count;
 
-    if ((file->f_flags & O_SYNC) | (this->sync_mode & SYNC_ALWAYS))
-        _uiomem_sync_for_cpu(this, virt_addr, phys_addr, xfer_size, UIOMEM_READ_ONLY);
+    _uiomem_sync_for_cpu(this, virt_addr, phys_addr, xfer_size, UIOMEM_READ_ONLY);
 
     if ((remain_size = copy_to_user(buff, virt_addr, xfer_size)) != 0) {
         result = 0;
         goto return_unlock;
     }
 
-    if ((file->f_flags & O_SYNC) | (this->sync_mode & SYNC_ALWAYS))
-        _uiomem_sync_for_dev(this, virt_addr, phys_addr, xfer_size, UIOMEM_READ_ONLY);
+    _uiomem_sync_for_dev(this, virt_addr, phys_addr, xfer_size, UIOMEM_READ_ONLY);
 
     *ppos += xfer_size;
     result = xfer_size;
@@ -734,16 +732,14 @@ static ssize_t uiomem_device_file_write(struct file* file, const char __user* bu
     virt_addr = this->virt_addr + *ppos;
     xfer_size = (*ppos + count >= this->size) ? this->size - *ppos : count;
 
-    if ((file->f_flags & O_SYNC) | (this->sync_mode & SYNC_ALWAYS))
-        _uiomem_sync_for_cpu(this, virt_addr, phys_addr, xfer_size, UIOMEM_WRITE_ONLY);
+    _uiomem_sync_for_cpu(this, virt_addr, phys_addr, xfer_size, UIOMEM_WRITE_ONLY);
 
     if ((remain_size = copy_from_user(virt_addr, buff, xfer_size)) != 0) {
         result = 0;
         goto return_unlock;
     }
 
-    if ((file->f_flags & O_SYNC) | (this->sync_mode & SYNC_ALWAYS))
-        _uiomem_sync_for_dev(this, virt_addr, phys_addr, xfer_size, UIOMEM_WRITE_ONLY);
+    _uiomem_sync_for_dev(this, virt_addr, phys_addr, xfer_size, UIOMEM_WRITE_ONLY);
 
     *ppos += xfer_size;
     result = xfer_size;
