@@ -223,9 +223,6 @@ controlling the cache of uiomem.
 The `sync-offset` property is optional.
 When the `sync-offset` property is not specified, `sync-offset` is set to <0>.
 
-Details on cache management will be described in the next section.
-
-
 ### `sync-size`
 
 The `sync-size` property is used to set the size of the buffer range when manually
@@ -233,9 +230,6 @@ controlling the cache of uiomem.
 
 The `sync-size` property is optional.
 When the `sync-size` property is not specified, `sync-size` is set to ths size specified by the `reg` property.
-
-Details on cache management will be described in the next section.
-
 
 ### `sync-direction`
 
@@ -259,9 +253,6 @@ When the `sync-direction` property is not specified, `sync-direction` is set to 
 		};
 
 ```
-
-Details on cache management will be described in the next section.
-
 
 ## Device file
 
@@ -478,4 +469,9 @@ The value written to this device file can include sync_offset, sync_size, and sy
 The sync_offset/sync_size/sync_direction specified by ```sync_for_device``` is temporary and does not affect the ```sync_offset``` or ```sync_size``` or ```sync_direction``` device files.
 
 
+
+# Example using uiomem
+
+  * https://github.com/ikwzm/PLBRAM-Ultra96
+  * https://github.com/ikwzm/PLBRAM-ZYBO-Z7
 
