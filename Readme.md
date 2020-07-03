@@ -7,6 +7,10 @@ See the develop branch for this project for details.
 
 https://github.com/ikwzm/uiomem/tree/develop
 
+Currently 1.0.0-alpha.1 is tentatively released.
+
+https://github.com/ikwzm/uiomem/tree/v1.0.0-alpha.1.
+
 # Overview
 
 ## Introduction of uiomem
