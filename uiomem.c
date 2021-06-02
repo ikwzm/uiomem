@@ -1,6 +1,6 @@
 /*********************************************************************************
  *
- *       Copyright (C) 2015-2020 Ichiro Kawazome
+ *       Copyright (C) 2015-2021 Ichiro Kawazome
  *       All rights reserved.
  * 
  *       Redistribution and use in source and binary forms, with or without
@@ -65,7 +65,7 @@ MODULE_DESCRIPTION("User space mappable io-memory device driver");
 MODULE_AUTHOR("ikwzm");
 MODULE_LICENSE("Dual BSD/GPL");
 
-#define DRIVER_VERSION     "1.0.0-alpha.1"
+#define DRIVER_VERSION     "1.0.0-alpha.2"
 #define DRIVER_NAME        "uiomem"
 #define DEVICE_NAME_FORMAT "uiomem%d"
 #define DEVICE_MAX_NUM      256
@@ -1241,13 +1241,7 @@ static int uiomem_platform_device_create(const char* name, int id, ulong addr, u
     }
 
     {
-        struct resource resource_list[] = {
-            {
-                .start = (phys_addr_t)(addr),
-                .end   = (phys_addr_t)(addr + size-1),
-                .flags = IORESOURCE_MEM,
-            },
-        };
+        struct resource resource_list[] = {DEFINE_RES_MEM(addr,size)};
         retval = platform_device_add_resources(pdev, resource_list, ARRAY_SIZE(resource_list));
         if (retval != 0) {
             dev_err(&pdev->dev, "platform_device_add_resources failed. return=%d\n", retval);
