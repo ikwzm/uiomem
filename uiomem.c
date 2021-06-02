@@ -41,6 +41,7 @@
 #include <linux/mutex.h>
 #include <linux/of.h>
 #include <linux/of_device.h>
+#include <linux/of_reserved_mem.h>
 #include <linux/sched.h>
 #include <linux/device.h>
 #include <linux/platform_device.h>
@@ -65,7 +66,7 @@ MODULE_DESCRIPTION("User space mappable io-memory device driver");
 MODULE_AUTHOR("ikwzm");
 MODULE_LICENSE("Dual BSD/GPL");
 
-#define DRIVER_VERSION     "1.0.0-alpha.2"
+#define DRIVER_VERSION     "1.0.0-alpha.3"
 #define DRIVER_NAME        "uiomem"
 #define DEVICE_NAME_FORMAT "uiomem%d"
 #define DEVICE_MAX_NUM      256
@@ -358,7 +359,6 @@ static inline void _uiomem_sync_for_dev(
  * * /sys/class/uiomem/<device-name>/sync_owner
  * * /sys/class/uiomem/<device-name>/sync_for_cpu
  * * /sys/class/uiomem/<device-name>/sync_for_device
- * * /sys/class/uiomem/<device-name>/dma_coherent
  * * 
  */
 
@@ -1410,8 +1410,29 @@ static int uiomem_platform_driver_probe(struct platform_device *pdev)
     dev_dbg(&pdev->dev, "driver probe start.\n");
 
     res = platform_get_resource(pdev, IORESOURCE_MEM, 0);
-    
-    retval = uiomem_device_probe(&pdev->dev, res);
+
+    if (res != NULL) {
+        retval = uiomem_device_probe(&pdev->dev, res);
+    } else {
+        struct device_node* np = of_parse_phandle(pdev->dev.of_node, "memory-region", 0);
+        if (np == NULL) {
+            dev_err(&pdev->dev, "can not found resource or memory region\n");
+            retval = -EINVAL;
+        } else {
+            struct reserved_mem* rmem = of_reserved_mem_lookup(np);
+            of_node_put(np);
+            if (rmem == NULL) {
+                dev_err(&pdev->dev, "failed to acquire memory region\n");
+                retval = -EINVAL;
+            } else {
+                struct resource resource_list[] = {DEFINE_RES_MEM(rmem->base,rmem->size)};
+                if (info_enable) {
+                    dev_info(&pdev->dev, "assigned reserved memory node %s\n", rmem->name);
+                }
+                retval = uiomem_device_probe(&pdev->dev, &resource_list[0]);
+            }
+        }
+    }
     
     if (info_enable && (retval == 0)) {
         dev_info(&pdev->dev, "driver installed.\n");
