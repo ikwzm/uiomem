@@ -945,10 +945,10 @@ static int uiomem_device_setup(struct uiomem_device_data* this, struct resource*
     /*
      * setup virtual address
      */
-    this->virt_addr = (void*)ioremap_cache(this->phys_addr, this->size);
+    this->virt_addr = memremap(this->phys_addr, this->size, MEMREMAP_WB);
     if (IS_ERR_OR_NULL(this->virt_addr)) {
         int retval = PTR_ERR(this->virt_addr);
-        dev_err(this->sys_dev, "ioremap_cache(addr=%pad,size=%zu) failed. return(%d)\n", &this->phys_addr, this->size, retval);
+        dev_err(this->sys_dev, "memremap(addr=%pad,size=%zu,MEMREMAP_WB) failed. return(%d)\n", &this->phys_addr, this->size, retval);
         this->virt_addr = NULL;
         return (retval == 0) ? -ENOMEM : retval;
     }
