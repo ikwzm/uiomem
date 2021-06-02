@@ -7,9 +7,9 @@ See the develop branch for this project for details.
 
 https://github.com/ikwzm/uiomem/tree/develop
 
-Currently 1.0.0-alpha.1 is tentatively released.
+Currently 1.0.0-alpha.3 is tentatively released.
 
-https://github.com/ikwzm/uiomem/tree/v1.0.0-alpha.1.
+https://github.com/ikwzm/uiomem/tree/v1.0.0-alpha.3.
 
 # Overview
 
@@ -48,7 +48,12 @@ The following `Makefile` is included in the repository.
 ```Makefile:Makefile
 HOST_ARCH   ?= $(shell uname -m | sed -e s/arm.*/arm/ -e s/aarch64.*/arm64/)
 ARCH        ?= $(shell uname -m | sed -e s/arm.*/arm/ -e s/aarch64.*/arm64/)
-KERNEL_SRC  ?= /lib/modules/$(shell uname -r)/build
+
+ifdef KERNEL_SRC
+  KERNEL_SRC_DIR  := $(KERNEL_SRC)
+else
+  KERNEL_SRC_DIR  ?= /lib/modules/$(shell uname -r)/build
+endif
 
 ifeq ($(ARCH), arm)
  ifneq ($(HOST_ARCH), arm)
@@ -65,7 +70,7 @@ uiomem-obj           := uiomem.o
 obj-$(CONFIG_UIOMEM) += $(uiomem-obj)
 
 ifndef UIOMEM_MAKE_TARGET
-  KERNEL_VERSION_LT_5 ?= $(shell awk '/^VERSION/{print int($$3) < 5}' $(KERNEL_SRC)/Makefile)
+  KERNEL_VERSION_LT_5 ?= $(shell awk '/^VERSION/{print int($$3) < 5}' $(KERNEL_SRC_DIR)/Makefile)
   ifeq ($(KERNEL_VERSION_LT_5), 1)
     UIOMEM_MAKE_TARGET ?= modules
   else
@@ -74,10 +79,13 @@ ifndef UIOMEM_MAKE_TARGET
 endif
 
 all:
-	make -C $(KERNEL_SRC) ARCH=$(ARCH) CROSS_COMPILE=$(CROSS_COMPILE) M=$(PWD) obj-m=$(uiomem-obj) $(UIOMEM_MAKE_TARGET)
+	$(MAKE) -C $(KERNEL_SRC_DIR) ARCH=$(ARCH) CROSS_COMPILE=$(CROSS_COMPILE) M=$(PWD) obj-m=$(uiomem-obj) $(UIOMEM_MAKE_TARGET)
+
+modules_install:
+	$(MAKE) -C $(KERNEL_SRC_DIR) ARCH=$(ARCH) CROSS_COMPILE=$(CROSS_COMPILE) M=$(PWD) obj-m=$(uiomem-obj) modules_install
 
 clean:
-	make -C $(KERNEL_SRC) ARCH=$(ARCH) CROSS_COMPILE=$(CROSS_COMPILE) M=$(PWD) clean
+	$(MAKE) -C $(KERNEL_SRC_DIR) ARCH=$(ARCH) CROSS_COMPILE=$(CROSS_COMPILE) M=$(PWD) clean
 
 ```
 
@@ -143,6 +151,7 @@ The following properties can be set in the device tree.
 
   *  `compatible`
   *  `reg`
+  *  `memory-region`
   *  `shareable`
   *  `minor-number`
   *  `device-name`
@@ -161,6 +170,7 @@ property as "ikwzm,uiomem".
 The `reg` property specifies the physical address and size.
 The `reg` property is used when uiomem allocates a buffer outside the management of Linux Kernel.
 The memory area that can be specified must be aligned with the page size.
+Either the `reg` property or the `memory-region` property is required.
 
 ```devicetree:devicetree.dts
 		#address-cells = <2>;
@@ -168,6 +178,29 @@ The memory area that can be specified must be aligned with the page size.
 		uiomem@0xFFFC0000 {
 			compatible = "ikwzm,uiomem";
 			reg = <0x0 0xFFFC0000 0x0 0x00040000>;
+		};
+```
+
+### `memory-region`
+
+The `memory-region` property specifies the memory region allocated for reserved memory.
+The memory region specified by the `memory-region` property must always have the `no-map` property specified.
+Either the `reg` property or the `memory-region` property is required.
+
+```devicetree:devicetree.dts
+		#address-cells = <2>;
+		#size-cells = <2>;
+		reserved_memory {
+			ranges;
+			image_buf0: image_buf@0 {
+				no-map;
+				reg = <0x0 0x70000000 0x0 0x10000000>;
+				label = "image_buf0";
+			};
+		};
+		uiomem@image_buf0 {
+			compatible = "ikwzm,uiomem";
+			memory-region = <&image_buf0>;
 		};
 ```
 
