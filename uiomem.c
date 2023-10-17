@@ -1256,11 +1256,19 @@ static int uiomem_platform_device_create(const char* name, int id, ulong addr, u
             {},
         };
         struct property_entry* props = (name != NULL) ? &props_list[0] : &props_list[1];
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 17, 0))
+        retval = device_create_managed_software_node(&pdev->dev, props, NULL);
+        if (retval != 0) {
+            dev_err(&pdev->dev, "device_create_managed_software_node failed. return=%d\n", retval);
+            goto failed;
+        }
+#else        
         retval = device_add_properties(&pdev->dev, props);
         if (retval != 0) {
             dev_err(&pdev->dev, "device_add_properties failed. return=%d\n", retval);
             goto failed;
         }
+#endif
     }
 
     plat->dev  = &pdev->dev;
