@@ -7,9 +7,9 @@ See the develop branch for this project for details.
 
 https://github.com/ikwzm/uiomem/tree/develop
 
-Currently 1.0.0-alpha.3 is tentatively released.
+Currently 1.0.0-alpha.4 is tentatively released.
 
-https://github.com/ikwzm/uiomem/tree/v1.0.0-alpha.3.
+https://github.com/ikwzm/uiomem/tree/v1.0.0-alpha.4.
 
 # Overview
 
@@ -35,7 +35,7 @@ Some platforms allow to specify them in the device tree.
 
 ## Supported platforms
 
-* OS : Linux Kernel Version 4.19, 5.4 (the author tested on 5.4).
+* OS : Linux Kernel Version 4.19, 5.4, 6.1 (the author tested on 5.4 and 6.1).
 * CPU: ARMv7 Cortex-A9 (Xilinx ZYNQ / Altera CycloneV SoC)
 * CPU: ARM64 Cortex-A53 (Xilinx ZYNQ UltraScale+ MPSoC)
 
@@ -46,43 +46,47 @@ Some platforms allow to specify them in the device tree.
 The following `Makefile` is included in the repository.
 
 ```Makefile:Makefile
-HOST_ARCH   ?= $(shell uname -m | sed -e s/arm.*/arm/ -e s/aarch64.*/arm64/)
-ARCH        ?= $(shell uname -m | sed -e s/arm.*/arm/ -e s/aarch64.*/arm64/)
+# SPDX-License-Identifier: GPL-2.0 OR MIT
+# Copyright (C) 2015-2023 Ichiro Kawazome
 
-ifdef KERNEL_SRC
-  KERNEL_SRC_DIR  := $(KERNEL_SRC)
-else
-  KERNEL_SRC_DIR  ?= /lib/modules/$(shell uname -r)/build
-endif
+#
+# For in kernel tree variables
+# 
+obj-$(CONFIG_UIOMEM) += uiomem.o
+
+#
+# For out of kernel tree variables
+#
+CONFIG_MODULES ?= CONFIG_UIOMEM=m
+
+HOST_ARCH ?= $(shell uname -m | sed -e s/arm.*/arm/ -e s/aarch64.*/arm64/)
+ARCH      ?= $(shell uname -m | sed -e s/arm.*/arm/ -e s/aarch64.*/arm64/)
 
 ifeq ($(ARCH), arm)
  ifneq ($(HOST_ARCH), arm)
-   CROSS_COMPILE  ?= arm-linux-gnueabihf-
+   CROSS_COMPILE ?= arm-linux-gnueabihf-
  endif
 endif
 ifeq ($(ARCH), arm64)
  ifneq ($(HOST_ARCH), arm64)
-   CROSS_COMPILE  ?= aarch64-linux-gnu-
+   CROSS_COMPILE ?= aarch64-linux-gnu-
  endif
 endif
 
-uiomem-obj           := uiomem.o
-obj-$(CONFIG_UIOMEM) += $(uiomem-obj)
-
-ifndef UIOMEM_MAKE_TARGET
-  KERNEL_VERSION_LT_5 ?= $(shell awk '/^VERSION/{print int($$3) < 5}' $(KERNEL_SRC_DIR)/Makefile)
-  ifeq ($(KERNEL_VERSION_LT_5), 1)
-    UIOMEM_MAKE_TARGET ?= modules
-  else
-    UIOMEM_MAKE_TARGET ?= uiomem.ko
-  endif
+ifdef KERNEL_SRC
+  KERNEL_SRC_DIR := $(KERNEL_SRC)
+else
+  KERNEL_SRC_DIR ?= /lib/modules/$(shell uname -r)/build
 endif
 
+#
+# For out of kernel tree rules
+#
 all:
-	$(MAKE) -C $(KERNEL_SRC_DIR) ARCH=$(ARCH) CROSS_COMPILE=$(CROSS_COMPILE) M=$(PWD) obj-m=$(uiomem-obj) $(UIOMEM_MAKE_TARGET)
+	$(MAKE) -C $(KERNEL_SRC_DIR) ARCH=$(ARCH) CROSS_COMPILE=$(CROSS_COMPILE) M=$(PWD) $(CONFIG_MODULES) modules
 
 modules_install:
-	$(MAKE) -C $(KERNEL_SRC_DIR) ARCH=$(ARCH) CROSS_COMPILE=$(CROSS_COMPILE) M=$(PWD) obj-m=$(uiomem-obj) modules_install
+	$(MAKE) -C $(KERNEL_SRC_DIR) ARCH=$(ARCH) CROSS_COMPILE=$(CROSS_COMPILE) M=$(PWD) $(CONFIG_MODULES) modules_install
 
 clean:
 	$(MAKE) -C $(KERNEL_SRC_DIR) ARCH=$(ARCH) CROSS_COMPILE=$(CROSS_COMPILE) M=$(PWD) clean
@@ -99,21 +103,21 @@ The maximum number of memory area that can be allocated using `insmod` is 8 (uio
 
 ```console
 shell$ sudo insmod uiomem.ko uiomem0_addr=0x0400000000 uiomem0_size=0x00040000
-[13494.188047] uiomem uiomem0: driver version = 0.0.1
-[13494.192932] uiomem uiomem0: major number   = 510
-[13494.197572] uiomem uiomem0: minor number   = 0
-[13494.202015] uiomem uiomem0: range address  = 0x0000000400000000
-[13494.207933] uiomem uiomem0: range size     = 262144
-[13494.212896] uiomem uiomem.0: driver installed.
-shell$ ls -la /dev/udmabuf0
-crw------- 1 root root 510, 0 Jun 30 10:19 /dev/uiomem0
+[  562.657246] uiomem uiomem0: driver version = 1.0.0-alpha.4
+[  562.657264] uiomem uiomem0: major number   = 238
+[  562.657270] uiomem uiomem0: minor number   = 0
+[  562.657275] uiomem uiomem0: range address  = 0x0000000400000000
+[  562.657282] uiomem uiomem0: range size     = 262144
+[  562.657287] uiomem uiomem.0: driver installed.
+shell$ ls -la /dev/uiomem0
+crw------- 1 root root 238, 0 Oct 21 17:36 /dev/uiomem0
 ```
 
 The module can be uninstalled by the `rmmod` command.
 
 ```console
 shell$ sudo rmmod uiomem
-[13742.388123] uiomem uiomem.0: driver removed.
+[  657.672544] uiomem uiomem.0: driver removed.
 ```
 
 ## Configuration via the device tree file
@@ -137,14 +141,14 @@ memory area and create device drivers when loaded by `insmod`.
 
 ```console
 shell$ sudo insmod uiomem.ko
-[14208.028545] uiomem uiomem0: driver version = 0.0.1
-[14208.033377] uiomem uiomem0: major number   = 509
-[14208.038008] uiomem uiomem0: minor number   = 0
-[14208.042448] uiomem uiomem0: range address  = 0x0000000400000000
-[14208.048369] uiomem uiomem0: range size     = 262144
-[14208.053244] uiomem 400000000.uiomem_plbram: driver installed.
+[  773.889476] uiomem uiomem0: driver version = 1.0.0-alpha.4
+[  773.889496] uiomem uiomem0: major number   = 237
+[  773.889501] uiomem uiomem0: minor number   = 0
+[  773.889506] uiomem uiomem0: range address  = 0x0000000400000000
+[  773.889512] uiomem uiomem0: range size     = 262144
+[  773.889518] uiomem 400000000.uiomem_plbram: driver installed.
 shell$ ls -la /dev/uiomem0
-crw------- 1 root root 509, 0 Jun 30 10:31 /dev/uiomem0
+crw------- 1 root root 237, 0 Oct 21 17:40 /dev/uiomem0
 ```
 
 The following properties can be set in the device tree.
