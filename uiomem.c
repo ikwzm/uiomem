@@ -614,6 +614,13 @@ static int uiomem_device_file_release(struct inode *inode, struct file *file)
 #define _PGPROT_DMACOHERENT(vm_page_prot)  pgprot_writecombine(vm_page_prot)
 #endif
 
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(6, 3, 0))
+static inline void vm_flags_set(struct vm_area_struct* vma, vm_flags_t flags)
+{
+    vma->vm_flags |=  (flags);
+}
+#endif
+
 /**
  * uiomem_device_file_mmap() - uiomem device file memory map operation.
  * @file:       Pointer to the file structure.
@@ -632,15 +639,15 @@ static int uiomem_device_file_mmap(struct file *file, struct vm_area_struct* vma
     if ((file->f_flags & O_SYNC) | (this->sync_mode & SYNC_ALWAYS)) {
         switch (this->sync_mode & SYNC_MODE_MASK) {
             case SYNC_MODE_NONCACHED :
-                vma->vm_flags    |= VM_IO;
+                vm_flags_set(vma, VM_IO);
                 vma->vm_page_prot = _PGPROT_NONCACHED(vma->vm_page_prot);
                 break;
             case SYNC_MODE_WRITECOMBINE :
-                vma->vm_flags    |= VM_IO;
+                vm_flags_set(vma, VM_IO);
                 vma->vm_page_prot = _PGPROT_WRITECOMBINE(vma->vm_page_prot);
                 break;
             case SYNC_MODE_DMACOHERENT :
-                vma->vm_flags    |= VM_IO;
+                vm_flags_set(vma, VM_IO);
                 vma->vm_page_prot = _PGPROT_DMACOHERENT(vma->vm_page_prot);
                 break;
             default :
