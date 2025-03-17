@@ -1537,7 +1537,11 @@ static int __init uiomem_init(void)
         goto failed;
     }
 
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 4, 0)
     uiomem_sys_class = class_create(THIS_MODULE, DRIVER_NAME);
+#else
+    uiomem_sys_class = class_create(DRIVER_NAME);
+#endif
     if (IS_ERR_OR_NULL(uiomem_sys_class)) {
         retval = PTR_ERR(uiomem_sys_class);
         uiomem_sys_class = NULL;
