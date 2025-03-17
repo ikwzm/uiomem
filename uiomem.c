@@ -296,6 +296,133 @@ static void arch_sync_for_dev(void* virt_start, phys_addr_t phys_start, size_t s
 #endif
 
 /**
+ * DOC: Data Cache Clean/Invalid for riscv architecture (CONFIG_RISCV_NONSTANDARD_CACHE_OPS=y)
+ *
+ * This section defines arch_sync_for_cpu() and arch_sync_for_dev().
+ *
+ * * riscv_cbom_block_size             - cache line size of riscv (external variable).
+ * * riscv_inval_dcache_area()         - invalid data cache.
+ * * riscv_clean_dcache_area()         - clean(write-back) data cache.
+ * * riscv_flush_dcache_area()         - flush(invalid and write-back) data cache.
+ * * arch_sync_for_cpu()               - _uiomem_sync_for_cpu() for riscv
+ * * arch_sync_for_dev()               - _uiomem_sync_for_dev() for riscv
+ */
+#if (defined(CONFIG_RISCV) && defined(CONFIG_RISCV_NONSTANDARD_CACHE_OPS))
+#include <asm/cacheflush.h>
+#include <asm/dma-noncoherent.h>
+static inline void riscv_inval_dcache_area(void* vaddr, phys_addr_t paddr, size_t size)
+{
+    if (unlikely(noncoherent_cache_ops.inv)) {
+        noncoherent_cache_ops.inv(paddr, size);
+        return;
+    }
+    ALT_CMO_OP(inval, vaddr, size, riscv_cbom_block_size);
+}
+static inline void riscv_clean_dcache_area(void* vaddr, phys_addr_t paddr, size_t size)
+{
+    if (unlikely(noncoherent_cache_ops.wback)) {
+        noncoherent_cache_ops.wback(paddr, size);
+        return;
+    }
+    ALT_CMO_OP(clean, vaddr, size, riscv_cbom_block_size);
+}
+static inline void riscv_flush_dcache_area(void* vaddr, phys_addr_t paddr, size_t size)
+{
+    if (unlikely(noncoherent_cache_ops.wback_inv)) {
+        noncoherent_cache_ops.wback_inv(paddr, size);
+        return;
+    }
+    ALT_CMO_OP(flush, vaddr, size, riscv_cbom_block_size);
+}
+static inline bool arch_sync_dma_cpu_needs_post_dma_flush(void)
+{
+    return true;
+}
+static inline bool arch_sync_dma_clean_before_fromdevice(void)
+{
+    return true;
+}
+static void arch_sync_for_cpu(void* virt_start, phys_addr_t phys_start, size_t size, enum uiomem_direction direction)
+{
+    switch(direction) {
+    case UIOMEM_WRITE_ONLY:
+        break;
+    case UIOMEM_READ_ONLY:
+    case UIOMEM_READ_WRITE:
+        if (arch_sync_dma_cpu_needs_post_dma_flush())
+            riscv_inval_dcache_area(virt_start, phys_start, size);
+        break;
+     default:
+        break;
+    }
+}
+static void arch_sync_for_dev(void* virt_start, phys_addr_t phys_start, size_t size, enum uiomem_direction direction)
+{
+    switch(direction) {
+    case UIOMEM_WRITE_ONLY:
+        riscv_clean_dcache_area(virt_start, phys_start, size);
+        break;
+    case UIOMEM_READ_ONLY:
+        if (!arch_sync_dma_clean_before_fromdevice()) {
+            riscv_inval_dcache_area(virt_start, phys_start, size);
+            break;
+        }
+        fallthrough;
+    case UIOMEM_READ_WRITE:
+        if (IS_ENABLED(CONFIG_ARCH_HAS_SYNC_FOR_CPU) &&
+            arch_sync_dma_cpu_needs_post_dma_flush())
+            riscv_clean_dcache_area(virt_start, phys_start, size);
+        else
+            riscv_flush_dcache_area(virt_start, phys_start, size);
+        break;
+    default:
+        break;
+    }
+}
+#endif
+/**
+ * DOC: Data Cache Clean/Invalid for riscv architecture (CONFIG_RISCV_NONSTANDARD_CACHE_OPS=n)
+ *
+ * This section defines arch_sync_for_cpu() and arch_sync_for_dev().
+ *
+ * * riscv_cbom_block_size             - cache line size of riscv (external variable).
+ * * arch_sync_for_cpu()               - _uiomem_sync_for_cpu() for riscv
+ * * arch_sync_for_dev()               - _uiomem_sync_for_dev() for riscv
+ */
+#if (defined(CONFIG_RISCV) && !defined(CONFIG_RISCV_NONSTANDARD_CACHE_OPS))
+#include <asm/cacheflush.h>
+static void arch_sync_for_cpu(void* virt_start, phys_addr_t phys_start, size_t size, enum uiomem_direction direction)
+{
+    switch(direction) {
+    case UIOMEM_WRITE_ONLY:
+        break;
+    case UIOMEM_READ_ONLY:
+    case UIOMEM_READ_WRITE:
+        ALT_CMO_OP(flush, virt_start, size, riscv_cbom_block_size);
+        break;
+    default:
+        break;
+    }
+}
+static void arch_sync_for_dev(void* virt_start, phys_addr_t phys_start, size_t size, enum uiomem_direction direction)
+{
+    switch(direction) {
+    case UIOMEM_WRITE_ONLY:
+        ALT_CMO_OP(clean, virt_start, size, riscv_cbom_block_size);
+        break;
+    case UIOMEM_READ_ONLY:
+        ALT_CMO_OP(clean, virt_start, size, riscv_cbom_block_size);
+        break;
+    case UIOMEM_READ_WRITE:
+        ALT_CMO_OP(flush, virt_start, size, riscv_cbom_block_size);
+        break;
+    default:
+        break;
+    }
+}
+#endif
+
+/**
  * DOC: Data Cache Clean/Invalid for architecuture independent.
  *
  * This section defines the following functions.
