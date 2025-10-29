@@ -1455,13 +1455,13 @@ static int uiomem_platform_driver_probe(struct platform_device *pdev)
     return retval;
 }
 /**
- * uiomem_platform_driver_remove() -  Remove call for the device.
+ * _uiomem_platform_driver_remove() -  Remove call for the device.
  * @pdev:       Handle to the platform device structure.
  * Return:      Success(=0) or error status(<0).
  *
  * Unregister the device after releasing the resources.
  */
-static int uiomem_platform_driver_remove(struct platform_device *pdev)
+static int _uiomem_platform_driver_remove(struct platform_device *pdev)
 {
     int retval = 0;
 
@@ -1474,6 +1474,31 @@ static int uiomem_platform_driver_remove(struct platform_device *pdev)
     }
     return retval;
 }
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 11, 0)
+/**
+ * uiomem_platform_driver_remove() -  Remove call for the device.
+ * @pdev:       Handle to the platform device structure.
+ * Return:      Success(=0) or error status(<0).
+ *
+ * Unregister the device after releasing the resources.
+ */
+static int uiomem_platform_driver_remove(struct platform_device *pdev)
+{
+    return _uiomem_platform_driver_remove(pdev);
+}
+#else
+/**
+ * uiomem_platform_driver_remove() -  Remove call for the device.
+ * @pdev:       Handle to the platform device structure.
+ * Return:      void
+ *
+ * Unregister the device after releasing the resources.
+ */
+static void uiomem_platform_driver_remove(struct platform_device *pdev)
+{
+    _uiomem_platform_driver_remove(pdev);
+}
+#endif
 
 /**
  * Open Firmware Device Identifier Matching Table
