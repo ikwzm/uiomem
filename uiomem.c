@@ -66,7 +66,7 @@ MODULE_DESCRIPTION("User space mappable io-memory device driver");
 MODULE_AUTHOR("ikwzm");
 MODULE_LICENSE("Dual BSD/GPL");
 
-#define DRIVER_VERSION     "1.0.0-alpha.6"
+#define DRIVER_VERSION     "1.0.0-alpha.7"
 #define DRIVER_NAME        "uiomem"
 #define DEVICE_NAME_FORMAT "uiomem%d"
 #define DEVICE_MAX_NUM      256
@@ -102,16 +102,16 @@ module_param(     info_enable , int, S_IRUGO);
 MODULE_PARM_DESC( info_enable , "uiomem install/uninstall infomation enable");
 
 /**
- * DOC: Uiomem Device Data Structure
+ * DOC: Uiomem Object Structure
  *
  * This section defines the structure of uiomem device.
  *
  */
 
 /**
- * struct uiomem_device_data - uiomem device data structure.
+ * struct uiomem_object - uiomem object structure.
  */
-struct uiomem_device_data {
+struct uiomem_object {
     struct device*       sys_dev;
     struct cdev          cdev;
     dev_t                device_number;
@@ -305,7 +305,7 @@ static void arch_sync_for_dev(void* virt_start, phys_addr_t phys_start, size_t s
  */
 /**
  * _uiomem_sync_for_cpu() - call arch_sync_for_cpu().
- * @this:       Pointer to the uiomem device data structure.
+ * @this:       Pointer to the uiomem object structure.
  * @virt_addr:  Virtua address.
  * @phys_addr:  Physical address.
  * @size:       Sync size.
@@ -313,7 +313,7 @@ static void arch_sync_for_dev(void* virt_start, phys_addr_t phys_start, size_t s
  * Return:      Success(=0) or error status(<0).
  */
 static inline void _uiomem_sync_for_cpu(
-  struct uiomem_device_data*  this      ,
+  struct uiomem_object*  this      ,
   void*                       virt_addr ,
   phys_addr_t                 phys_addr ,
   size_t                      size      ,
@@ -324,7 +324,7 @@ static inline void _uiomem_sync_for_cpu(
 
 /**
  * _uiomem_sync_for_dev() - call arch_sync_for_dev().
- * @this:       Pointer to the uiomem device data structure.
+ * @this:       Pointer to the uiomem object structure.
  * @virt_addr:  Virtua address.
  * @phys_addr:  Physical address.
  * @size:       Sync size.
@@ -332,7 +332,7 @@ static inline void _uiomem_sync_for_cpu(
  * Return:      Success(=0) or error status(<0).
  */
 static inline void _uiomem_sync_for_dev(
-  struct uiomem_device_data*  this      ,
+  struct uiomem_object*  this      ,
   void*                       virt_addr ,
   phys_addr_t                 phys_addr ,
   size_t                      size      ,
@@ -372,7 +372,7 @@ static inline void _uiomem_sync_for_dev(
 /**
  * uiomem_sync_command_argments() - get argment for _uiomem_sync_for_cpu() or _uiomem_sync_for_dev()
  *                                  
- * @this:       Pointer to the uiomem device data structure.
+ * @this:       Pointer to the uiomem object structure.
  * @command:    sync command (this->sync_for_cpu or this->sync_for_device)
  * @phys_addr:  Pointer to the phys_addr for dma_sync_single_for_...()
  * @size:       Pointer to the size for dma_sync_single_for_...()
@@ -380,7 +380,7 @@ static inline void _uiomem_sync_for_dev(
  * Return:      Success(=0) or error status(<0).
  */
 static int uiomem_sync_command_argments(
-    struct uiomem_device_data *this      ,
+    struct uiomem_object *     this      ,
     u64                        command   ,
     void*                     *virt_addr ,
     phys_addr_t               *phys_addr ,
@@ -414,10 +414,10 @@ static int uiomem_sync_command_argments(
 
 /**
  * uiomem_sync_for_cpu() - call _uiomem_sync_for_cpu() when (sync_for_cpu != 0)
- * @this:       Pointer to the uiomem device data structure.
+ * @this:       Pointer to the uiomem object structure.
  * Return:      Success(=0) or error status(<0).
  */
-static int uiomem_sync_for_cpu(struct uiomem_device_data* this)
+static int uiomem_sync_for_cpu(struct uiomem_object* this)
 {
     int status = 0;
 
@@ -439,10 +439,10 @@ static int uiomem_sync_for_cpu(struct uiomem_device_data* this)
 
 /**
  * uiomem_sync_for_device() - call _uiomem_sync_for_dev() when (sync_for_device != 0)
- * @this:       Pointer to the uiomem device data structure.
+ * @this:       Pointer to the uiomem object structure.
  * Return:      Success(=0) or error status(<0).
  */
-static int uiomem_sync_for_device(struct uiomem_device_data* this)
+static int uiomem_sync_for_device(struct uiomem_object* this)
 {
     int status = 0;
 
@@ -466,7 +466,7 @@ static int uiomem_sync_for_device(struct uiomem_device_data* this)
 static ssize_t uiomem_show_ ## __attr_name(struct device *dev, struct device_attribute *attr, char *buf) \
 {                                                            \
     ssize_t status;                                          \
-    struct uiomem_device_data* this = dev_get_drvdata(dev);  \
+    struct uiomem_object* this = dev_get_drvdata(dev);       \
     if (mutex_lock_interruptible(&this->sem) != 0)           \
         return -ERESTARTSYS;                                 \
     status = sprintf(buf, __format, (__value));              \
@@ -474,14 +474,14 @@ static ssize_t uiomem_show_ ## __attr_name(struct device *dev, struct device_att
     return status;                                           \
 }
 
-static inline int NO_ACTION(struct uiomem_device_data* this){return 0;}
+static inline int NO_ACTION(struct uiomem_object* this){return 0;}
 
 #define DEF_ATTR_SET(__attr_name, __min, __max, __pre_action, __post_action) \
 static ssize_t uiomem_set_ ## __attr_name(struct device *dev, struct device_attribute *attr, const char *buf, size_t size) \
 { \
     ssize_t       status; \
     u64           value;  \
-    struct uiomem_device_data* this = dev_get_drvdata(dev);                  \
+    struct uiomem_object* this = dev_get_drvdata(dev);                       \
     if (0 != mutex_lock_interruptible(&this->sem)){return -ERESTARTSYS;}     \
     if (0 != (status = kstrtoull(buf, 0, &value))){            goto failed;} \
     if ((value < __min) || (__max < value)) {status = -EINVAL; goto failed;} \
@@ -570,10 +570,10 @@ static inline void uiomem_sys_class_set_attributes(void)
  */
 static int uiomem_device_file_open(struct inode *inode, struct file *file)
 {
-    struct uiomem_device_data* this;
+    struct uiomem_object* this;
     int status = 0;
 
-    this = container_of(inode->i_cdev, struct uiomem_device_data, cdev);
+    this = container_of(inode->i_cdev, struct uiomem_object, cdev);
     file->private_data = this;
     this->is_open = 1;
 
@@ -588,7 +588,7 @@ static int uiomem_device_file_open(struct inode *inode, struct file *file)
  */
 static int uiomem_device_file_release(struct inode *inode, struct file *file)
 {
-    struct uiomem_device_data* this = file->private_data;
+    struct uiomem_object* this = file->private_data;
 
     this->is_open = 0;
 
@@ -629,7 +629,7 @@ static inline void vm_flags_set(struct vm_area_struct* vma, vm_flags_t flags)
  */
 static int uiomem_device_file_mmap(struct file *file, struct vm_area_struct* vma)
 {
-    struct uiomem_device_data* this = file->private_data;
+    struct uiomem_object* this = file->private_data;
     unsigned long              page_frame_num;
     unsigned long              map_area_size;
 
@@ -675,12 +675,12 @@ static int uiomem_device_file_mmap(struct file *file, struct vm_area_struct* vma
  */
 static ssize_t uiomem_device_file_read(struct file* file, char __user* buff, size_t count, loff_t* ppos)
 {
-    struct uiomem_device_data* this      = file->private_data;
-    int                        result    = 0;
-    size_t                     xfer_size;
-    size_t                     remain_size;
-    phys_addr_t                phys_addr;
-    void*                      virt_addr;
+    struct uiomem_object*  this      = file->private_data;
+    int                    result    = 0;
+    size_t                 xfer_size;
+    size_t                 remain_size;
+    phys_addr_t            phys_addr;
+    void*                  virt_addr;
 
     if (mutex_lock_interruptible(&this->sem))
         return -ERESTARTSYS;
@@ -720,12 +720,12 @@ static ssize_t uiomem_device_file_read(struct file* file, char __user* buff, siz
  */
 static ssize_t uiomem_device_file_write(struct file* file, const char __user* buff, size_t count, loff_t* ppos)
 {
-    struct uiomem_device_data* this      = file->private_data;
-    int                        result    = 0;
-    size_t                     xfer_size;
-    size_t                     remain_size;
-    phys_addr_t                phys_addr;
-    void*                      virt_addr;
+    struct uiomem_object*  this      = file->private_data;
+    int                    result    = 0;
+    size_t                 xfer_size;
+    size_t                 remain_size;
+    phys_addr_t            phys_addr;
+    void*                  virt_addr;
 
     if (mutex_lock_interruptible(&this->sem))
         return -ERESTARTSYS;
@@ -764,8 +764,8 @@ static ssize_t uiomem_device_file_write(struct file* file, const char __user* bu
  */
 static loff_t uiomem_device_file_llseek(struct file* file, loff_t offset, int whence)
 {
-    struct uiomem_device_data* this = file->private_data;
-    loff_t                      new_pos;
+    struct uiomem_object*  this = file->private_data;
+    loff_t                 new_pos;
 
     switch (whence) {
         case 0 : /* SEEK_SET */
@@ -800,33 +800,31 @@ static const struct file_operations uiomem_device_file_ops = {
 };
 
 /**
- * DOC: Uiomem Device Data Operations
+ * DOC: Uiomem Object Operations
  *
- * This section defines the operation of uiomem device data.
+ * This section defines the operation of uiomem object.
  *
- * * uiomem_device_ida         - Uiomem Device Minor Number allocator variable.
- * * uiomem_device_number      - Uiomem Device Major Number.
- * * uiomem_device_create()    - Create uiomem device data.
- * * uiomem_device_setup()     - Setup the uiomem device data.
- * * uiomem_device_info()      - Print infomation the uiomem device data.
- * * uiomem_device_destroy()   - Destroy the uiomem device data.
- * * uiomem_device_probe()     - Probe call for the device driver.
- * * uiomem_device_remove()    - Remove uiomem device data from device driver.
+ * * uiomem_device_ida         - Uiomem Object Device Minor Number allocator variable.
+ * * uiomem_device_number      - Uiomem Object Device Major Number.
+ * * uiomem_object_create()    - Create uiomem object.
+ * * uiomem_object_setup()     - Setup the uiomem object.
+ * * uiomem_object_info()      - Print infomation the uiomem object.
+ * * uiomem_object_destroy()   - Destroy the uiomem object.
+ * * uiomem_device_remove()    - Remove uiomem object from device driver.
  */
-
 static DEFINE_IDA(uiomem_device_ida);
 static dev_t      uiomem_device_number = 0;
 
 /**
- * uiomem_device_create() -  Create uiomem device data.
+ * uiomem_object_create() -  Create uiomem object.
  * @name:       device name   or NULL.
  * @parent:     parent device or NULL.
  * @minor:      minor_number  or -1 or -2.
- * Return:      Pointer to the uiomem device data or NULL.
+ * Return:      Pointer to the uiomem object or NULL.
  */
-static struct uiomem_device_data* uiomem_device_create(const char* name, struct device* parent, int minor)
+static struct uiomem_object* uiomem_object_create(const char* name, struct device* parent, int minor)
 {
-    struct uiomem_device_data* this     = NULL;
+    struct uiomem_object* this     = NULL;
     unsigned int               done     = 0;
     const unsigned int         DONE_ALLOC_MINOR   = (1 << 0);
     const unsigned int         DONE_CHRDEV_ADD    = (1 << 1);
@@ -852,7 +850,7 @@ static struct uiomem_device_data* uiomem_device_create(const char* name, struct 
         done |= DONE_ALLOC_MINOR;
     }
     /*
-     * create (uiomem_device_data*) this.
+     * create (uiomem_object*) this.
      */
     {
         this = kzalloc(sizeof(*this), GFP_KERNEL);
@@ -934,21 +932,21 @@ static struct uiomem_device_data* uiomem_device_create(const char* name, struct 
 }
 
 /**
- * uiomem_device_setup() - Setup the uiomem device data.
- * @this:       Pointer to the uiomem device data.
- * @res:        handle to the resource structure.
+ * uiomem_object_setup() - Setup the uiomem object.
+ * @this:       Pointer to the uiomem object.
+ * @phys_addr:  Physical address.
+ * @size:       size.
  * Return:      Success(=0) or error status(<0).
  */
-static int uiomem_device_setup(struct uiomem_device_data* this, struct resource* res)
+static int uiomem_object_setup(struct uiomem_object* this, phys_addr_t phys_addr, size_t size)
 {
     if (!this)
         return -ENODEV;
     /*
-     * setup mem_region, phys_addr, size
+     * setup phys_addr, size
      */
-    this->mem_region = res;
-    this->phys_addr  = res->start;
-    this->size       = (size_t)resource_size(res);
+    this->phys_addr = phys_addr;
+    this->size      = size;
     /*
      * setup virtual address
      */
@@ -963,10 +961,10 @@ static int uiomem_device_setup(struct uiomem_device_data* this, struct resource*
 }
 
 /**
- * uiomem_device_info() - Print infomation the uiomem device data structure.
- * @this:       Pointer to the uiomem device data structure.
+ * uiomem_object_info() - Print infomation the uiomem object structure.
+ * @this:       Pointer to the uiomem object structure.
  */
-static void uiomem_device_info(struct uiomem_device_data* this)
+static void uiomem_object_info(struct uiomem_object* this)
 {
     dev_info(this->sys_dev, "driver version = %s\n"  , DRIVER_VERSION);
     dev_info(this->sys_dev, "major number   = %d\n"  , MAJOR(this->device_number));
@@ -976,13 +974,13 @@ static void uiomem_device_info(struct uiomem_device_data* this)
 }
 
 /**
- * uiomem_device_destroy() -  Destroy the uiomem device data.
- * @this:       Pointer to the uiomem device data.
+ * uiomem_object_destroy() -  Destroy the uiomem object.
+ * @this:       Pointer to the uiomem object.
  * Return:      Success(=0) or error status(<0).
  *
  * Unregister the device after releasing the resources.
  */
-static int uiomem_device_destroy(struct uiomem_device_data* this)
+static int uiomem_object_destroy(struct uiomem_object* this)
 {
     if (!this)
         return -ENODEV;
@@ -1002,17 +1000,17 @@ static int uiomem_device_destroy(struct uiomem_device_data* this)
 }
 
 /**
- * uiomem_device_remove()   - Remove uiomem device data from device driver.
+ * uiomem_device_remove()   - Remove uiomem object from device driver.
  * @dev:        handle to the device structure.
  * Return:      Success(=0) or error status(<0).
  */
 static int uiomem_device_remove(struct device *dev)
 {
-    struct uiomem_device_data* this   = dev_get_drvdata(dev);
-    int                        retval = 0;
+    struct uiomem_object* this   = dev_get_drvdata(dev);
+    int                   retval = 0;
 
     if (this != NULL) {
-        retval = uiomem_device_destroy(this);
+        retval = uiomem_object_destroy(this);
         dev_set_drvdata(dev, NULL);
     } else {
         retval = -ENODEV;
@@ -1021,55 +1019,501 @@ static int uiomem_device_remove(struct device *dev)
 }
 
 /**
- * uiomem_device_probe() -  Probe call for the device driver.
+ * DOC: Uiomem Device List section.
+ *
+ * This section defines the uiomem platform device list.
+ *
+ * * struct uiomem_device_entry          - uiomem device entry structure.
+ * * uiomem_device_list                  - list of uiomem device entry structure.
+ * * uiomem_device_list_sem              - semaphore of uiomem device entry list.
+ * * uiomem_device_list_create_entry()   - Create uiomem device entry and add to list.
+ * * uiomem_device_list_delete_entry()   - Delete uiomem device entry from list.
+ * * uiomem_device_list_remove_entry()   - Remove uiomem device entry from list with remove function
+ * * uiomem_device_list_cleanup()        - Remove all uiomem device entry from list.
+ * * uiomem_device_list_search()         - Search uiomem device entry from list by name or number.
+ * * uiomem_get_device_name_property()   - Get "device-name"  property from uiomem device entry.
+ * * uiomem_get_minor_number_property()  - Get "minor-number" property from uiomem device entry.
+ * * uiomem_get_addr_property()          - Get "addr"         property from uiomem device entry.
+ * * uiomem_get_size_property()          - Get "size"         property from uiomem device entry.
+ * * uiomem_get_option_property()        - Get "option"       property from uiomem device entry.
+ */
+#include <linux/property.h>
+
+/**
+ * struct uiomem_device_entry - uiomem platform device structure.
+ */
+struct uiomem_device_entry {
+    struct device*       dev;
+    struct device*       parent;
+    void                 (*prep_remove)(struct device* dev);
+    void                 (*post_remove)(struct device* dev);
+    struct list_head     list;
+};
+
+/**
+ * uiomem_device_list        - list of uiomem device entry structure.
+ * uiomem_device_list_sem    - semaphore of uiomem platform device list.
+ */
+static struct list_head uiomem_device_list;
+static struct mutex     uiomem_device_list_sem;
+
+/**
+ * uiomem_get_device_name_property()  - Get "device-name"  property from uiomem device.
  * @dev:        handle to the device structure.
- * @res:        handle to the resource structure.
+ * @name:       address of device name.
+ * Return:      Success(=0) or error status(<0).
+ */
+static inline int uiomem_get_device_name_property(struct device *dev, const char** name)
+{
+    return device_property_read_string(dev, "device-name", name);
+}
+
+/**
+ * uiomem_get_minor_number_property() - Get "minor-number" property from uiomem device.
+ * @dev:        handle to the device structure.
+ * @value:      address of minor number value.
+ * Return:      Success(=0) or error status(<0).
+ */
+static inline int uiomem_get_minor_number_property(struct device *dev, u32* value)
+{
+    return device_property_read_u32(dev, "minor-number", value);
+}
+
+/**
+ * * uiomem_get_addr_property()          - Get "addr" property from uiomem device entry.
+ * @dev:        handle to the device structure.
+ * @value:      address of iomem size value.
+ * Return:      Success(=0) or error status(<0).
+ */
+static inline int uiomem_get_addr_property(struct device *dev, u64* value)
+{
+    return device_property_read_u64(dev, "addr", value);
+}
+
+/**
+ * * uiomem_get_size_property()          - Get "size" property from uiomem device entry.
+ * @dev:        handle to the device structure.
+ * @value:      address of iomem size value.
+ * Return:      Success(=0) or error status(<0).
+ */
+static inline int uiomem_get_size_property(struct device *dev, u64* value)
+{
+    return device_property_read_u64(dev, "size", value);
+}
+
+/**
+ * uiomem_get_option_property() - Get "option" property from uiomem device.
+ * @dev:        handle to the device structure.
+ * @value:      address of option value.
+ * Return:      Success(=0) or error status(<0).
+ */
+static inline int uiomem_get_option_property(struct device *dev, u64* value)
+{
+    return device_property_read_u64(dev, "option", value);
+}
+
+/**
+ * uiomem_device_list_search()    - Search uiomem device entry from list by name or number.
+ * @dev:        handle to the device structure or NULL.
+ * @name:       device name or NULL.
+ * @id:         device id or negative integer.
+ * Return:      Pointer to the found udmabuf device entry or NULL.
+ */
+static struct uiomem_device_entry* uiomem_device_list_search(struct device *dev, const char* name, int id)
+{
+    struct uiomem_device_entry* entry;
+    struct uiomem_device_entry* found_entry = NULL;
+    mutex_lock(&uiomem_device_list_sem);
+    list_for_each_entry(entry, &uiomem_device_list, list) {
+        bool found_by_dev  = true;
+        bool found_by_name = true;
+        bool found_by_id   = true;
+        if (dev != NULL) {
+            found_by_dev = false;
+            if (dev == entry->dev)
+                found_by_dev = true;
+        }
+        if (name != NULL) {
+            const char* device_name;
+            found_by_name = false;
+            if (uiomem_get_device_name_property(entry->dev, &device_name) == 0) 
+                if (strcmp(name, device_name) == 0)
+                    found_by_name = true;
+        }
+        if (id >= 0) {
+            u32 minor_number;
+            found_by_id = false;
+            if (uiomem_get_minor_number_property(entry->dev, &minor_number) == 0) 
+                if (id == minor_number)
+                    found_by_id = true;
+        }
+        if ((found_by_dev == true) && (found_by_name == true) && (found_by_id == true))
+            found_entry = entry;
+    }
+    mutex_unlock(&uiomem_device_list_sem);
+    return found_entry;
+}
+
+/**
+ * uiomem_device_list_create_entry() - Create uiomem device entry and add to list.
+ * @dev:        handle to the device structure.
+ * @parent:     handle to the parent device structure
+ *              If the entry is successfully created, it is get_device(parent)
+ * @name:       device name or NULL.
+ * @id:         device id or negative integer.
+ * @addr:       iomem addresss.
+ * @size:       iomem size.
+ * @option      option.
+ * @prep_remove prepare function when remove entry from udmabuf device list or NULL.
+ * @post_remove post function when remove entry from udmabuf device list or NULL.
+ * Return:      pointer to the udmabuf device entry or NULL.
+ */
+static struct uiomem_device_entry* uiomem_device_list_create_entry(struct device *dev, struct device *parent, const char* name, int id, u64 addr, u64 size, u64 option, void (*prep_remove)(struct device*), void (*post_remove)(struct device*))
+{                              
+    struct uiomem_device_entry* exist_entry;
+    struct uiomem_device_entry* entry  = NULL;
+    int                         retval = 0;
+    
+    exist_entry = uiomem_device_list_search(NULL, name, id);
+    if (!IS_ERR_OR_NULL(exist_entry)) {
+        pr_err(DRIVER_NAME ": device name(%s) or id(%d) is already exists\n", (name)?name:"NULL", id);
+        retval = -EINVAL;
+        goto failed;
+    }
+
+    entry = kzalloc(sizeof(*entry), GFP_KERNEL);
+    if (IS_ERR_OR_NULL(entry)) {
+        retval = PTR_ERR(entry);
+        entry  = NULL;
+        pr_err(DRIVER_NAME ": kzalloc() failed. return=%d\n", retval);
+        goto failed;
+    }
+
+    {
+        struct property_entry   props_list[] = {
+            PROPERTY_ENTRY_STRING("device-name" , name  ),
+            PROPERTY_ENTRY_U64(   "addr"        , addr  ),
+            PROPERTY_ENTRY_U64(   "size"        , size  ),
+            PROPERTY_ENTRY_U32(   "minor-number", id    ),
+            PROPERTY_ENTRY_U64(   "option"      , option),
+            {},
+        };
+        struct property_entry* props = (name != NULL) ? &props_list[0] : &props_list[1];
+#if     (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 17, 0))
+        {
+            retval = device_create_managed_software_node(dev, props, NULL);
+            if (retval != 0) {
+                pr_err(DRIVER_NAME ": device_create_managed_software_node failed. return=%d\n", retval);
+                goto failed;
+            }
+        }
+#elif   (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 7, 0))
+        {
+            retval = device_add_properties(dev, props);
+            if (retval != 0) {
+                pr_err(DRIVER_NAME ": device_add_properties failed. return=%d\n", retval);
+                goto failed;
+            }
+        }
+#else
+        {
+            const struct property_set pset = {
+                .properties = props,
+            };
+            retval = device_add_property_set(dev, &pset);
+            if (retval != 0) {
+                pr_err(DRIVER_NAME ": device_add_propertiy_set failed. return=%d\n", retval);
+                goto failed;
+            }
+        }
+#endif
+    }
+    
+    entry->dev = dev;
+    entry->parent = parent;
+    entry->prep_remove = prep_remove;
+    entry->post_remove = post_remove;
+    
+    mutex_lock(&uiomem_device_list_sem);
+    list_add_tail(&entry->list, &uiomem_device_list);
+    mutex_unlock(&uiomem_device_list_sem);
+
+    return entry;
+
+ failed:
+    if (entry != NULL) {
+        kfree(entry);
+    }
+    return ERR_PTR(retval);
+}
+    
+/**
+ * uiomem_device_list_delete_entry() - Delete uiomem device entry from list.
+ * @entry:      Pointer to the udmabuf device entry.
+ */
+static void uiomem_device_list_delete_entry(struct uiomem_device_entry* entry)
+{
+    mutex_lock(&uiomem_device_list_sem);
+    list_del(&entry->list);
+    mutex_unlock(&uiomem_device_list_sem);
+    kfree(entry);
+}
+
+/**
+ * uiomem_device_list_remove_entry() - Remove uiomem device entry from list with remove functions.
+ * @entry:      Pointer to the udmabuf device entry.
+ */
+static void uiomem_device_list_remove_entry(struct uiomem_device_entry* entry)
+{
+    struct device* dev    = entry->dev;
+    struct device* parent = entry->parent;
+    void (*prep_remove)(struct device* dev) = entry->prep_remove;
+    void (*post_remove)(struct device* dev) = entry->post_remove;
+    if (prep_remove)
+        prep_remove(dev);
+    uiomem_device_list_delete_entry(entry);
+    if (post_remove)
+        post_remove(dev);
+    if (parent)
+        put_device(parent);
+}
+
+/**
+ * uiomem_device_list_cleanup() - Remove all uiomem device entry from list.
+ */
+static void uiomem_device_list_cleanup(void)
+{
+    struct uiomem_device_entry* entry;
+    while(!list_empty(&uiomem_device_list)) {
+        entry = list_first_entry(&uiomem_device_list, typeof(*(entry)), list);
+        uiomem_device_list_remove_entry(entry);
+    }
+}
+
+/**
+ * DOC: Uiomem Platform Device section.
+ *
+ * This section defines the udmabuf platform device.
+ *
+ * * uiomem_platform_device_create() - Create uiomem platform device and add to device list.
+ * * uiomem_platform_device_del()    - Delete uiomem platform device before remove from device list.
+ * * uiomem_platform_device_put()    - Put uiomem platform device after remove from device list.
+ * * uiomem_platform_device_probe()  - Probe  call for the platform device driver.
+ * * uiomem_platform_device_remove() - Remove call for the platform device driver.
+ */
+
+/**
+ * uiomem_platform_device_del() - Delete uiomem platform device before remove from device list.
+ * @dev:        handle to the device structure.
+ */
+static void uiomem_platform_device_del(struct device* dev)
+{
+    /*
+     * platform_device_del() calls udmabuf_platform_driver_remove()
+     */
+    platform_device_del(to_platform_device(dev));
+}
+
+/**
+ * uiomem_platform_device_put() - Put uiomem platform device after remove from device list.
+ * @dev:        handle to the device structure.
+ */
+static void uiomem_platform_device_put(struct device* dev)
+{
+    platform_device_put(to_platform_device(dev));
+}
+
+/**
+ * uiomem_platform_device_create() - Create uiomem platform device and add to device list.
+ * @name:       device name or NULL.
+ * @id:         device id.
+ * @addr:       iomem address.
+ * @size:       iomem size.
+ * @option      option.
+ * Return:      Success(=0) or error status(<0).
+ */
+static int uiomem_platform_device_create(const char* name, int id, u64 addr, u64 size, u64 option)
+{
+    struct platform_device*     pdev   = NULL;
+    struct uiomem_device_entry* entry  = NULL;
+    int                         retval = 0;
+
+    if (addr == 0)
+        return -EINVAL;
+
+    if (size == 0)
+        return -EINVAL;
+
+    pdev = platform_device_alloc(DRIVER_NAME, id);
+    if (IS_ERR_OR_NULL(pdev)) {
+        retval = PTR_ERR(pdev);
+        pdev   = NULL;
+        pr_err(DRIVER_NAME ": platform_device_alloc(%s,%d) failed. return=%d\n", DRIVER_NAME, id, retval);
+        goto failed;
+    }
+
+    entry = uiomem_device_list_create_entry(&pdev->dev,
+                                            NULL,
+                                            name,
+                                            id,
+                                            addr,
+                                            size,
+                                            option,
+                                            uiomem_platform_device_del,
+                                            uiomem_platform_device_put);
+    if (IS_ERR_OR_NULL(entry)) {
+        retval = PTR_ERR(entry);
+        entry  = NULL;
+        pr_err(DRIVER_NAME ": device create entry failed. return=%d\n", retval);
+        goto failed;
+    }
+
+    {
+        struct resource resource_list[] = {DEFINE_RES_MEM(addr,size)};
+        retval = platform_device_add_resources(pdev, resource_list, ARRAY_SIZE(resource_list));
+        if (retval != 0) {
+            pr_err(DRIVER_NAME ": platform_device_add_resources failed. return=%d\n", retval);
+            goto failed;
+        }
+    }
+
+    /*
+     * platform_device_add() calls uiomem_platform_driver_probe()
+     */
+    retval = platform_device_add(pdev);
+    if (retval != 0) {
+        pr_err(DRIVER_NAME ": platform_device_add failed. return=%d\n", retval);
+        goto failed;
+    }
+
+    if (dev_get_drvdata(&pdev->dev) == NULL) {
+        pr_err(DRIVER_NAME ": object of %s is none.", dev_name(&pdev->dev));
+        platform_device_del(pdev);
+        retval = -ENODEV;
+        goto failed;
+    }
+    
+    return 0;
+
+ failed:
+    if (entry != NULL) {
+        uiomem_device_list_delete_entry(entry);
+    }
+    if (pdev  != NULL) {
+        platform_device_put(pdev);
+    }
+    return retval;
+}
+
+/**
+ * of_property_read_ulong() -  Find and read a unsigned long intger from a property.
+ * @node:       device node which the property value is to be read.
+ * @propname:   name of property to be searched.
+ * @out_value:  pointer to return value, modified only if return value is 0.
+ * Return:      Success(=0) or error status(<0).
+ */
+static int of_property_read_ulong(const struct device_node* node, const char* propname, u64* out_value)
+{
+    u32    u32_value;
+    u64    u64_value;
+    int    retval;
+
+    if ((retval = of_property_read_u64(node, propname, &u64_value)) == 0) {
+        *out_value = u64_value;
+        return 0;
+    }
+      
+    if ((retval = of_property_read_u32(node, propname, &u32_value)) == 0) {
+        *out_value = (u64)u32_value;
+        return 0;
+    }
+      
+    return retval;
+}
+
+/**
+ * uiomem_platform_device_remove() - Remove call for the uiomem platform device.
+ * @dev:        handle to the device structure.
+ * Return:      Success(=0) or error status(<0).
+ */
+static int uiomem_platform_device_remove(struct device *dev)
+{
+    return uiomem_device_remove(dev);
+}
+
+/**
+ * uiomem_platform_device_probe() -  Probe call for the device driver.
+ * @dev:        handle to the device structure.
+ * @res:        handle to the resource structure or NULL.
  * Return:      Success(=0) or error status(<0).
  *
  * It does all the memory allocation and registration for the device.
  */
-static int uiomem_device_probe(struct device *dev, struct resource* res)
+static int uiomem_platform_device_probe(struct device *dev, struct resource* res)
 {
-    int                         retval       = 0;
-    unsigned int                u32_value    = 0;
-    int                         minor_number = -1;
-    struct resource*            mem_resource;
-    struct uiomem_device_data*  device_data  = NULL;
-    const char*                 device_name  = NULL;
+    int                    retval       = 0;
+    u32                    u32_value    = 0;
+    u64                    u64_value    = 0;
+    int                    minor_number = -1;
+    phys_addr_t            mem_addr;
+    size_t                 mem_size;
+    struct uiomem_object*  obj          = NULL;
+    const char*            device_name  = NULL;
 
     /*
      * check handle to the resource structure.
      */
-    if (IS_ERR_OR_NULL(res)) {
-        dev_err(dev, "can not found resource\n");
-        retval = -EINVAL;
-        goto failed;
+    if (res == NULL) {
+        struct device_node* np = of_parse_phandle(dev->of_node, "memory-region", 0);
+        if (np == NULL) {
+            dev_err(dev, "can not found resource or memory region\n");
+            retval = -EINVAL;
+            goto failed;
+        } else {
+            struct reserved_mem* rmem = of_reserved_mem_lookup(np);
+            of_node_put(np);
+            if (rmem == NULL) {
+                dev_err(dev, "failed to acquire memory region\n");
+                retval = -EINVAL;
+                goto failed;
+            } else {
+                struct resource resource_list[] = {DEFINE_RES_MEM(rmem->base,rmem->size)};
+                if (info_enable) {
+                    dev_info(dev, "assigned reserved memory node %s\n", rmem->name);
+                }
+                res = &resource_list[0];
+            }
+        }
     }
+
     if (resource_size(res) == 0) {
         dev_err(dev, "invalid resource size(=%zu).\n", (size_t)resource_size(res));
         retval = -EINVAL;
         goto failed;
     }
     if ((resource_size(res) & ~PAGE_MASK) != 0) {
-        dev_err(dev, "invalid resource size(=%zu), size must be page alignemnt(=%zu).\n", (size_t)resource_size(res), (size_t)PAGE_SIZE);
+        dev_err(dev, "invalid resource size(=%zu), size must be page alignemnt(=%zu).\n",
+                (size_t)resource_size(res), (size_t)PAGE_SIZE);
         retval = -EINVAL;
         goto failed;
     }
     if ((res->start & ~PAGE_MASK) != 0) {
-        dev_err(dev, "invalid resource addr(=%pad), addr must be page alignemnt(=%zu).\n", &res->start, (size_t)PAGE_SIZE);
+        dev_err(dev, "invalid resource addr(=%pad), addr must be page alignemnt(=%zu).\n",
+                &res->start, (size_t)PAGE_SIZE);
         retval = -EINVAL;
         goto failed;
     }
     if (pfn_valid(PFN_DOWN(res->start)) || pfn_valid(PFN_DOWN(res->end)))
     {
-        dev_err(dev, "invalid resource addr(=%pad) size(=%zu), this region is used by the kernel.\n", &res->start, (size_t)resource_size(res));
+        dev_err(dev, "invalid resource addr(=%pad) size(=%zu), this region is used by the kernel.\n",
+                &res->start, (size_t)resource_size(res));
         retval = -EINVAL;
         goto failed;
     }
     /*
      * minor-number property
      */
-    if        (device_property_read_u32(dev, "minor-number", &u32_value) == 0) {
+    if        (uiomem_get_minor_number_property(dev, &u32_value) == 0) {
         minor_number = u32_value;
     } else if (of_property_read_u32(dev->of_node, "minor-number", &u32_value) == 0) {
         minor_number = u32_value;
@@ -1079,9 +1523,8 @@ static int uiomem_device_probe(struct device *dev, struct resource* res)
     /*
      * device-name property
      */
-    if (device_property_read_string(dev, "device-name", &device_name) != 0)
+    if (uiomem_get_device_name_property(dev, &device_name) != 0)
         device_name = of_get_property(dev->of_node, "device-name", NULL);
-
     if (IS_ERR_OR_NULL(device_name)) {
         if (minor_number < 0)
             device_name = dev_name(dev);
@@ -1089,30 +1532,33 @@ static int uiomem_device_probe(struct device *dev, struct resource* res)
             device_name = NULL;
     }
     /*
-     * uiomem_device_create()
+     * uiomem_object_create()
      */
-    device_data = uiomem_device_create(device_name, dev, minor_number);
-    if (IS_ERR_OR_NULL(device_data)) {
-        retval = PTR_ERR(device_data);
-        dev_err(dev, "driver create failed. return=%d.\n", retval);
-        device_data = NULL;
+    obj = uiomem_object_create(device_name, dev, minor_number);
+    if (IS_ERR_OR_NULL(obj)) {
+        retval = PTR_ERR(obj);
+        dev_err(dev, "object create failed. return=%d.\n", retval);
+        obj = NULL;
         retval = (retval == 0) ? -EINVAL : retval;
         goto failed;
     }
-    dev_set_drvdata(dev, device_data);
+    dev_set_drvdata(dev, obj);
     /*
-     * set mem_resource
+     * set obj->mem_region, mem_addr, mem_size
      */
     if (of_property_read_bool(dev->of_node, "shareable")) {
-        mem_resource = res;
-        device_data->mem_region = NULL;
+        obj->mem_region = NULL;
+        mem_addr        = res->start;
+        mem_size        = resource_size(res);
     } else {
-        mem_resource = request_mem_region(res->start, resource_size(res), dev_name(dev));
-        if (mem_resource == NULL) {
+        obj->mem_region = request_mem_region(res->start, resource_size(res), dev_name(dev));
+        if (obj->mem_region == NULL) {
             dev_err(dev, "request_mem_region failed.\n");
             retval = -EBUSY;
             goto failed;
         }
+        mem_addr        = obj->mem_region->start;
+        mem_size        = resource_size(obj->mem_region);
     }
     /*
      * sync-mode property
@@ -1122,14 +1568,14 @@ static int uiomem_device_probe(struct device *dev, struct resource* res)
             dev_err(dev, "invalid sync-mode property value=%d\n", u32_value);
             goto failed;
         }
-        device_data->sync_mode &= ~SYNC_MODE_MASK;
-        device_data->sync_mode |= (int)u32_value;
+        obj->sync_mode &= ~SYNC_MODE_MASK;
+        obj->sync_mode |= (int)u32_value;
     }
     /*
      * sync-always property
      */
     if (of_property_read_bool(dev->of_node, "sync-always")) {
-        device_data->sync_mode |= SYNC_ALWAYS;
+        obj->sync_mode |= SYNC_ALWAYS;
     }
     /*
      * sync-direction property
@@ -1139,199 +1585,50 @@ static int uiomem_device_probe(struct device *dev, struct resource* res)
             dev_err(dev, "invalid sync-direction property value=%d\n", u32_value);
             goto failed;
         }
-        device_data->sync_direction = (int)u32_value;
+        obj->sync_direction = (int)u32_value;
     }
     /*
      * sync-offset property
      */
-    if (of_property_read_u32(dev->of_node, "sync-offset", &u32_value) == 0) {
-        if (u32_value >= resource_size(mem_resource)) {
-            dev_err(dev, "invalid sync-offset property value=%d\n", u32_value);
+    if (of_property_read_ulong(dev->of_node, "sync-offset", &u64_value) == 0) {
+        if (u64_value >= mem_size) {
+            dev_err(dev, "invalid sync-offset property value=%llu\n", u64_value);
             goto failed;
         }
-        device_data->sync_offset = (int)u32_value;
+        obj->sync_offset = (int)u64_value;
     }
     /*
      * sync-size property
      */
-    if (of_property_read_u32(dev->of_node, "sync-size", &u32_value) == 0) {
-        if (device_data->sync_offset + u32_value > resource_size(mem_resource)) {
-            dev_err(dev, "invalid sync-size property value=%d\n", u32_value);
+    if (of_property_read_ulong(dev->of_node, "sync-size", &u64_value) == 0) {
+        if (obj->sync_offset + u64_value > mem_size) {
+            dev_err(dev, "invalid sync-size property value=%llu\n", u64_value);
             goto failed;
         }
-        device_data->sync_size = (size_t)u32_value;
+        obj->sync_size = (size_t)u64_value;
     } else {
-        device_data->sync_size = (size_t)(resource_size(mem_resource) - device_data->sync_offset);
+        obj->sync_size = (size_t)(mem_size - obj->sync_offset);
     }
     /*
-     * uiomem_device_setup()
+     * uiomem_object_setup()
      */
-    retval = uiomem_device_setup(device_data, mem_resource);
+    retval = uiomem_object_setup(obj, mem_addr, mem_size);
     if (retval) {
         dev_err(dev, "driver setup failed. return=%d\n", retval);
         goto failed;
     }
 
     if (info_enable) {
-        uiomem_device_info(device_data);
+        uiomem_object_info(obj);
     }
 
     return 0;
 
 failed:
-    if (device_data != NULL)
-        (void)uiomem_device_remove(dev);
+    if (obj != NULL)
+        (void)uiomem_platform_device_remove(dev);
 
     return retval;
-}
-
-/**
- * DOC: Uiomem Platform Device.
- *
- * This section defines the uiomem platform device list.
- *
- * * struct uiomem_platform_device       - uiomem platform device structure.
- * * uiomem_platform_device_list         - list of uiomem platform device structure.
- * * uiomem_platform_device_sem          - semaphore of uiomem platform device list.
- * * uiomem_platform_device_create()     - Create uiomem platform device and add to list.
- * * uiomem_platform_device_remove()     - Remove uiomem platform device and delete from list.
- * * uiomem_platform_device_remove_all() - Remove all uiomem platform devices and clear list.
- */
-#include <linux/property.h>
-
-/**
- * struct uiomem_platform_device - uiomem platform device structure.
- */
-struct uiomem_platform_device {
-    struct device*       dev;
-    struct list_head     list;
-};
-
-/**
- * uiomem_static_device_list     - list of uiomem platform device structure.
- * uiomem_platform_device_sem    - semaphore of uiomem platform device list.
- */
-static struct list_head uiomem_platform_device_list;
-static struct mutex     uiomem_platform_device_sem;
-
-/**
- * uiomem_platform_device_create() - Create uiomem platform device and add to list.
- * @name:       device name or NULL.
- * @id:         device id.
- * @size:       buffer size.
- * Return:      Success(=0) or error status(<0).
- */
-static int uiomem_platform_device_create(const char* name, int id, ulong addr, ulong size)
-{
-    struct platform_device*         pdev       = NULL;
-    struct uiomem_platform_device*  plat       = NULL;
-    int                             retval     = 0;
-    bool                            list_added = false;
-
-    if (size == 0)
-        return -EINVAL;
-
-    pdev = platform_device_alloc(DRIVER_NAME, id);
-    if (IS_ERR_OR_NULL(pdev)) {
-        retval = PTR_ERR(pdev);
-        pdev   = NULL;
-        printk(KERN_ERR "platform_device_alloc(%s,%d) failed. return=%d\n", DRIVER_NAME, id, retval);
-        goto failed;
-    }
-
-    plat = kzalloc(sizeof(*plat), GFP_KERNEL);
-    if (IS_ERR_OR_NULL(plat)) {
-        retval = PTR_ERR(plat);
-        plat   = NULL;
-        dev_err(&pdev->dev, "kzalloc() failed. return=%d\n", retval);
-        goto failed;
-    }
-
-    {
-        struct resource resource_list[] = {DEFINE_RES_MEM(addr,size)};
-        retval = platform_device_add_resources(pdev, resource_list, ARRAY_SIZE(resource_list));
-        if (retval != 0) {
-            dev_err(&pdev->dev, "platform_device_add_resources failed. return=%d\n", retval);
-            goto failed;
-        }
-    }
-
-    {
-        struct property_entry   props_list[] = {
-            PROPERTY_ENTRY_STRING("device-name" , name),
-            PROPERTY_ENTRY_U32(   "minor-number", id  ),
-            {},
-        };
-        struct property_entry* props = (name != NULL) ? &props_list[0] : &props_list[1];
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 17, 0))
-        retval = device_create_managed_software_node(&pdev->dev, props, NULL);
-        if (retval != 0) {
-            dev_err(&pdev->dev, "device_create_managed_software_node failed. return=%d\n", retval);
-            goto failed;
-        }
-#else        
-        retval = device_add_properties(&pdev->dev, props);
-        if (retval != 0) {
-            dev_err(&pdev->dev, "device_add_properties failed. return=%d\n", retval);
-            goto failed;
-        }
-#endif
-    }
-
-    plat->dev  = &pdev->dev;
-    mutex_lock(&uiomem_platform_device_sem);
-    list_add_tail(&plat->list, &uiomem_platform_device_list);
-    list_added = true;
-    mutex_unlock(&uiomem_platform_device_sem);
-    
-    retval = platform_device_add(pdev);
-    if (retval != 0) {
-        dev_err(&pdev->dev, "platform_device_add failed. return=%d\n", retval);
-        goto failed;
-    }
-
-    return 0;
-
- failed:
-    if (list_added == true) {
-        mutex_lock(&uiomem_platform_device_sem);
-        list_del(&plat->list);
-        mutex_unlock(&uiomem_platform_device_sem);
-    }
-    if (pdev != NULL) {
-        platform_device_put(pdev);
-    }
-    if (plat != NULL) {
-        kfree(plat);
-    }
-    return retval;
-}
-
-/**
- * uiomem_platform_device_remove() - Remove uiomem platform device and delete from list.
- * @plat:       uiomem_platform_device*
- */
-static void uiomem_platform_device_remove(struct uiomem_platform_device* plat)
-{
-    struct device*           dev  = plat->dev;
-    struct platform_device*  pdev = to_platform_device(dev);
-    platform_device_del(pdev);
-    platform_device_put(pdev);
-    mutex_lock(&uiomem_platform_device_sem);
-    list_del(&plat->list);
-    mutex_unlock(&uiomem_platform_device_sem);
-    kfree(plat);
-}
-
-/**
- * uiomem_platform_device_remove_all() - Remove all uiomem platform devices and clear list.
- */
-static void uiomem_platform_device_remove_all(void)
-{
-    while(!list_empty(&uiomem_platform_device_list)) {
-        struct uiomem_platform_device* plat = list_first_entry(&uiomem_platform_device_list, typeof(*(plat)), list);
-        uiomem_platform_device_remove(plat);
-    }
 }
 
 /**
@@ -1352,7 +1649,7 @@ static void uiomem_platform_device_remove_all(void)
 #define CALL_UIOMEM_STATIC_DEVICE_CREATE(__num)                         \
     if (uiomem ## __num ## _size != 0) {                                \
         ida_simple_remove(&uiomem_device_ida, __num);                   \
-        uiomem_platform_device_create(NULL, __num, uiomem ## __num ## _addr, uiomem ## __num ## _size); \
+        uiomem_platform_device_create(NULL, __num, uiomem ## __num ## _addr, uiomem ## __num ## _size, 0); \
     }
 
 #define CALL_UIOMEM_STATIC_DEVICE_RESERVE_MINOR_NUMBER(__num)           \
@@ -1404,8 +1701,8 @@ static void uiomem_static_device_create_all(void)
  *
  * This section defines the uiomem platform driver.
  *
- * * uiomem_platform_driver_probe()   - Probe  call for the platform device driver.
- * * uiomem_platform_driver_remove()  - Remove call for the platform device driver.
+ * * uiomem_platform_driver_probe()   - Probe call for platform_device_add().
+ * * uiomem_platform_driver_remove()  - Remove call for platform_device_del().
  * * uiomem_of_match                  - Open Firmware Device Identifier Matching Table.
  * * uiomem_platform_driver           - Platform Driver Structure.
  */
@@ -1426,28 +1723,7 @@ static int uiomem_platform_driver_probe(struct platform_device *pdev)
 
     res = platform_get_resource(pdev, IORESOURCE_MEM, 0);
 
-    if (res != NULL) {
-        retval = uiomem_device_probe(&pdev->dev, res);
-    } else {
-        struct device_node* np = of_parse_phandle(pdev->dev.of_node, "memory-region", 0);
-        if (np == NULL) {
-            dev_err(&pdev->dev, "can not found resource or memory region\n");
-            retval = -EINVAL;
-        } else {
-            struct reserved_mem* rmem = of_reserved_mem_lookup(np);
-            of_node_put(np);
-            if (rmem == NULL) {
-                dev_err(&pdev->dev, "failed to acquire memory region\n");
-                retval = -EINVAL;
-            } else {
-                struct resource resource_list[] = {DEFINE_RES_MEM(rmem->base,rmem->size)};
-                if (info_enable) {
-                    dev_info(&pdev->dev, "assigned reserved memory node %s\n", rmem->name);
-                }
-                retval = uiomem_device_probe(&pdev->dev, &resource_list[0]);
-            }
-        }
-    }
+    retval = uiomem_platform_device_probe(&pdev->dev, res);
     
     if (info_enable && (retval == 0)) {
         dev_info(&pdev->dev, "driver installed.\n");
@@ -1455,7 +1731,7 @@ static int uiomem_platform_driver_probe(struct platform_device *pdev)
     return retval;
 }
 /**
- * _uiomem_platform_driver_remove() -  Remove call for the device.
+ * _uiomem_platform_driver_remove() -  Remove call for the platform device driver.
  * @pdev:       Handle to the platform device structure.
  * Return:      Success(=0) or error status(<0).
  *
@@ -1467,7 +1743,7 @@ static int _uiomem_platform_driver_remove(struct platform_device *pdev)
 
     dev_dbg(&pdev->dev, "driver remove start.\n");
 
-    retval = uiomem_device_remove(&pdev->dev);
+    retval = uiomem_platform_device_remove(&pdev->dev);
 
     if (info_enable) {
         dev_info(&pdev->dev, "driver removed.\n");
@@ -1476,7 +1752,7 @@ static int _uiomem_platform_driver_remove(struct platform_device *pdev)
 }
 #if LINUX_VERSION_CODE < KERNEL_VERSION(6, 11, 0)
 /**
- * uiomem_platform_driver_remove() -  Remove call for the device.
+ * uiomem_platform_driver_remove() -  Remove call for the platform device driver.
  * @pdev:       Handle to the platform device structure.
  * Return:      Success(=0) or error status(<0).
  *
@@ -1488,7 +1764,7 @@ static int uiomem_platform_driver_remove(struct platform_device *pdev)
 }
 #else
 /**
- * uiomem_platform_driver_remove() -  Remove call for the device.
+ * uiomem_platform_driver_remove() -  Remove call for the platform device driver.
  * @pdev:       Handle to the platform device structure.
  * Return:      void
  *
@@ -1537,7 +1813,7 @@ static bool uiomem_platform_driver_registerd = false;
  */
 static void uiomem_cleanup(void)
 {
-    uiomem_platform_device_remove_all();
+    uiomem_device_list_cleanup();
     if (uiomem_platform_driver_registerd){platform_driver_unregister(&uiomem_platform_driver);}
     if (uiomem_sys_class     != NULL    ){class_destroy(uiomem_sys_class);}
     if (uiomem_device_number != 0       ){unregister_chrdev_region(uiomem_device_number, 0);}
@@ -1552,8 +1828,8 @@ static int __init uiomem_init(void)
     int retval = 0;
 
     ida_init(&uiomem_device_ida);
-    INIT_LIST_HEAD(&uiomem_platform_device_list);
-    mutex_init(&uiomem_platform_device_sem);
+    INIT_LIST_HEAD(&uiomem_device_list);
+    mutex_init(&uiomem_device_list_sem);
 
     retval = alloc_chrdev_region(&uiomem_device_number, 0, 0, DRIVER_NAME);
     if (retval != 0) {
