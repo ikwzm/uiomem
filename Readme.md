@@ -7,9 +7,9 @@ See the develop branch for this project for details.
 
 https://github.com/ikwzm/uiomem/tree/develop
 
-Currently 1.0.0-alpha.7 is tentatively released.
+Currently 1.1.0-alpha.1 is tentatively released.
 
-https://github.com/ikwzm/uiomem/tree/v1.0.0-alpha.7.
+https://github.com/ikwzm/uiomem/tree/v1.1.0-alpha.1.
 
 # Overview
 
@@ -103,11 +103,12 @@ The maximum number of memory area that can be allocated using `insmod` is 8 (uio
 
 ```console
 shell$ sudo insmod uiomem.ko uiomem0_addr=0x0400000000 uiomem0_size=0x00040000
-[  562.657246] uiomem uiomem0: driver version = 1.0.0-alpha.7
+[  562.657246] uiomem uiomem0: driver version = 1.1.0-alpha.1
 [  562.657264] uiomem uiomem0: major number   = 238
 [  562.657270] uiomem uiomem0: minor number   = 0
 [  562.657275] uiomem uiomem0: range address  = 0x0000000400000000
 [  562.657282] uiomem uiomem0: range size     = 262144
+[  562.657282] uiomem uiomem0: shareable      = 0
 [  562.657287] uiomem uiomem.0: driver installed.
 shell$ ls -la /dev/uiomem0
 crw------- 1 root root 238, 0 Oct 21 17:36 /dev/uiomem0
@@ -141,11 +142,12 @@ memory area and create device drivers when loaded by `insmod`.
 
 ```console
 shell$ sudo insmod uiomem.ko
-[  773.889476] uiomem uiomem0: driver version = 1.0.0-alpha.7
+[  773.889476] uiomem uiomem0: driver version = 1.1.0-alpha.1
 [  773.889496] uiomem uiomem0: major number   = 237
 [  773.889501] uiomem uiomem0: minor number   = 0
 [  773.889506] uiomem uiomem0: range address  = 0x0000000400000000
 [  773.889512] uiomem uiomem0: range size     = 262144
+[  773.889512] uiomem uiomem0: shareable      = 0
 [  773.889518] uiomem 400000000.uiomem_plbram: driver installed.
 shell$ ls -la /dev/uiomem0
 crw------- 1 root root 237, 0 Oct 21 17:40 /dev/uiomem0
@@ -292,7 +294,6 @@ When the `sync-direction` property is not specified, `sync-direction` is set to 
 			sync-size = <0x000F0000>;
 			sync-direction = <2>;
 		};
-
 ```
 
 ## Device file
@@ -303,6 +304,7 @@ When uiomem is loaded into the kernel, the following device files are created.
   * `/dev/<device-name>`
   * `/sys/class/uiomem/<device-name>/phys_addr`
   * `/sys/class/uiomem/<device-name>/size`
+  * `/sys/class/uiomem/<device-name>/shareable`
   * `/sys/class/uiomem/<device-name>/sync_offset`
   * `/sys/class/uiomem/<device-name>/sync_size`
   * `/sys/class/uiomem/<device-name>/sync_direction`
@@ -320,7 +322,6 @@ When uiomem is loaded into the kernel, the following device files are created.
         /* Do some read/write access to buf */
         close(fd);
     }
-
 ```
 
 The device file can be directly read/written by specifying the device as the target of `dd` in the shell.
@@ -351,7 +352,6 @@ The physical address of a memory area can be retrieved by reading `/sys/class/ui
         sscanf(attr, "%x", &phys_addr);
         close(fd);
     }
-
 ```
 
 ### `size`
@@ -366,7 +366,20 @@ The size of a memory area can be retrieved by reading `/sys/class/uiomem/<device
         sscanf(attr, "%d", &buf_size);
         close(fd);
     }
+```
 
+### `shareable`
+
+Whether the memory range of uiomem is shareable can be determined by reading `/sys/class/uiomem/<device-name>/shareable`.
+
+```C:uiomem_test.c
+    unsigned char  attr[1024];
+    unsigned int   shareable;
+    if ((fd  = open("/sys/class/uiomem/uiomem0/shareable", O_RDONLY)) != -1) {
+        read(fd, attr, 1024);
+        sscanf(attr, "%d", &shareable);
+        close(fd);
+    }
 ```
 
 ### `sync_offset`
@@ -433,7 +446,6 @@ If this value is 0, the buffer is owned by the cpu.
         sscanf(attr, "%x", &sync_owner);
         close(fd);
     }
-
 ```
 
 ### `sync_for_cpu`

@@ -66,7 +66,7 @@ MODULE_DESCRIPTION("User space mappable io-memory device driver");
 MODULE_AUTHOR("ikwzm");
 MODULE_LICENSE("Dual BSD/GPL");
 
-#define DRIVER_VERSION     "1.0.0-alpha.7"
+#define DRIVER_VERSION     "1.1.0-alpha.1"
 #define DRIVER_NAME        "uiomem"
 #define DEVICE_NAME_FORMAT "uiomem%d"
 #define DEVICE_MAX_NUM      256
@@ -128,6 +128,7 @@ struct uiomem_object {
     u64                  sync_for_cpu;
     u64                  sync_for_device;
     struct resource*     mem_region;
+    bool                 shareable;
 };
 
 /**
@@ -352,6 +353,7 @@ static inline void _uiomem_sync_for_dev(
  * * /sys/class/uiomem/<device-name>/driver_version
  * * /sys/class/uiomem/<device-name>/phys_addr
  * * /sys/class/uiomem/<device-name>/size
+ * * /sys/class/uiomem/<device-name>/shareable
  * * /sys/class/uiomem/<device-name>/sync_mode
  * * /sys/class/uiomem/<device-name>/sync_offset
  * * /sys/class/uiomem/<device-name>/sync_size
@@ -497,6 +499,7 @@ static ssize_t uiomem_set_ ## __attr_name(struct device *dev, struct device_attr
 DEF_ATTR_SHOW(driver_version , "%s\n"    , DRIVER_VERSION                                 );
 DEF_ATTR_SHOW(size           , "%zu\n"   , this->size                                     );
 DEF_ATTR_SHOW(phys_addr      , "%pad\n"  , &this->phys_addr                               );
+DEF_ATTR_SHOW(shareable      , "%d\n"    , this->shareable                                );
 DEF_ATTR_SHOW(sync_mode      , "%d\n"    , this->sync_mode                                );
 DEF_ATTR_SET( sync_mode                  , 0, 7,        NO_ACTION, NO_ACTION              );
 DEF_ATTR_SHOW(sync_offset    , "0x%llx\n", this->sync_offset                              );
@@ -515,6 +518,7 @@ static struct device_attribute uiomem_device_attrs[] = {
   __ATTR(driver_version , 0444, uiomem_show_driver_version  , NULL                        ),
   __ATTR(size           , 0444, uiomem_show_size            , NULL                        ),
   __ATTR(phys_addr      , 0444, uiomem_show_phys_addr       , NULL                        ),
+  __ATTR(shareable      , 0444, uiomem_show_shareable       , NULL                        ),
   __ATTR(sync_mode      , 0664, uiomem_show_sync_mode       , uiomem_set_sync_mode        ),
   __ATTR(sync_offset    , 0664, uiomem_show_sync_offset     , uiomem_set_sync_offset      ),
   __ATTR(sync_size      , 0664, uiomem_show_sync_size       , uiomem_set_sync_size        ),
@@ -971,6 +975,7 @@ static void uiomem_object_info(struct uiomem_object* this)
     dev_info(this->sys_dev, "minor number   = %d\n"  , MINOR(this->device_number));
     dev_info(this->sys_dev, "range address  = %pad\n", &this->phys_addr);
     dev_info(this->sys_dev, "range size     = %zu\n" , this->size);
+    dev_info(this->sys_dev, "shareable      = %d\n"  , this->shareable);
 }
 
 /**
@@ -1111,6 +1116,17 @@ static inline int uiomem_get_option_property(struct device *dev, u64* value)
 {
     return device_property_read_u64(dev, "option", value);
 }
+/**
+ * uiomem_get_option_shareable()   - Get sharable property from option value.
+ * @option:     option. shareable  = option[0:0]
+ */
+#define DEFINE_UIOMEM_OPTION(name,type,lo,hi)             \
+static inline type uiomem_get_option_ ## name(u64 option) \
+{                                                         \
+    const u64 mask = ((1UL << ((hi)-(lo)+1))-1);          \
+    return (type)((option >> (lo)) & mask);               \
+}
+DEFINE_UIOMEM_OPTION(shareable, bool, 0, 1)
 
 /**
  * uiomem_device_list_search()    - Search uiomem device entry from list by name or number.
@@ -1544,9 +1560,19 @@ static int uiomem_platform_device_probe(struct device *dev, struct resource* res
     }
     dev_set_drvdata(dev, obj);
     /*
-     * set obj->mem_region, mem_addr, mem_size
+     * shareable property
      */
     if (of_property_read_bool(dev->of_node, "shareable")) {
+        obj->shareable = true;
+    } else if (uiomem_get_option_property(dev, &u64_value) == 0) {
+        obj->shareable = uiomem_get_option_shareable(u64_value);
+    } else {
+        obj->shareable = false;
+    }
+    /*
+     * set mem_region and mem_addr and mem_size
+     */
+    if (obj->shareable == true) {
         obj->mem_region = NULL;
         mem_addr        = res->start;
         mem_size        = resource_size(res);
@@ -1644,12 +1670,15 @@ failed:
     MODULE_PARM_DESC(uiomem ## __num ## _addr, DRIVER_NAME #__num " start address");\
     static ulong     uiomem ## __num ## _size = 0;                                  \
     module_param(    uiomem ## __num ## _size, ulong, S_IRUGO);                     \
-    MODULE_PARM_DESC(uiomem ## __num ## _size, DRIVER_NAME #__num " range size");
+    MODULE_PARM_DESC(uiomem ## __num ## _size, DRIVER_NAME #__num " range size");   \
+    static ulong     uiomem ## __num ## _option = 0;                                \
+    module_param(    uiomem ## __num ## _option, ulong, S_IRUGO);                   \
+    MODULE_PARM_DESC(uiomem ## __num ## _option, DRIVER_NAME #__num " option");
 
 #define CALL_UIOMEM_STATIC_DEVICE_CREATE(__num)                         \
     if (uiomem ## __num ## _size != 0) {                                \
         ida_simple_remove(&uiomem_device_ida, __num);                   \
-        uiomem_platform_device_create(NULL, __num, uiomem ## __num ## _addr, uiomem ## __num ## _size, 0); \
+        uiomem_platform_device_create(NULL, __num, uiomem ## __num ## _addr, uiomem ## __num ## _size, uiomem ## __num ## _option); \
     }
 
 #define CALL_UIOMEM_STATIC_DEVICE_RESERVE_MINOR_NUMBER(__num)           \
