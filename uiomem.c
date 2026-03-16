@@ -66,7 +66,7 @@ MODULE_DESCRIPTION("User space mappable io-memory device driver");
 MODULE_AUTHOR("ikwzm");
 MODULE_LICENSE("Dual BSD/GPL");
 
-#define DRIVER_VERSION     "1.1.0-alpha.2"
+#define DRIVER_VERSION     "1.1.0-alpha.3"
 #define DRIVER_NAME        "uiomem"
 #define DEVICE_NAME_FORMAT "uiomem%d"
 #define DEVICE_MAX_NUM      256
@@ -643,21 +643,19 @@ static int uiomem_device_file_mmap(struct file *file, struct vm_area_struct* vma
     if ((file->f_flags & O_SYNC) | (this->sync_mode & SYNC_ALWAYS)) {
         switch (this->sync_mode & SYNC_MODE_MASK) {
             case SYNC_MODE_NONCACHED :
-                vm_flags_set(vma, VM_IO);
                 vma->vm_page_prot = _PGPROT_NONCACHED(vma->vm_page_prot);
                 break;
             case SYNC_MODE_WRITECOMBINE :
-                vm_flags_set(vma, VM_IO);
                 vma->vm_page_prot = _PGPROT_WRITECOMBINE(vma->vm_page_prot);
                 break;
             case SYNC_MODE_DMACOHERENT :
-                vm_flags_set(vma, VM_IO);
                 vma->vm_page_prot = _PGPROT_DMACOHERENT(vma->vm_page_prot);
                 break;
             default :
                 break;
         }
     }
+    vm_flags_set(vma, (VM_IO | VM_PFNMAP | VM_DONTEXPAND | VM_DONTDUMP));
     vma->vm_private_data = this;
 
     page_frame_num = (this->phys_addr >> PAGE_SHIFT) + vma->vm_pgoff;
