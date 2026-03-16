@@ -1,6 +1,6 @@
 /*********************************************************************************
  *
- *       Copyright (C) 2015-2025 Ichiro Kawazome
+ *       Copyright (C) 2015-2026 Ichiro Kawazome
  *       All rights reserved.
  * 
  *       Redistribution and use in source and binary forms, with or without
@@ -66,7 +66,7 @@ MODULE_DESCRIPTION("User space mappable io-memory device driver");
 MODULE_AUTHOR("ikwzm");
 MODULE_LICENSE("Dual BSD/GPL");
 
-#define DRIVER_VERSION     "1.1.0-alpha.1"
+#define DRIVER_VERSION     "1.1.0-alpha.2"
 #define DRIVER_NAME        "uiomem"
 #define DEVICE_NAME_FORMAT "uiomem%d"
 #define DEVICE_MAX_NUM      256
@@ -991,7 +991,7 @@ static int uiomem_object_destroy(struct uiomem_object* this)
         return -ENODEV;
 
     if (this->virt_addr != NULL) {
-        iounmap((void __iomem *)this->virt_addr);
+        memunmap(this->virt_addr);
         this->virt_addr = NULL;
     }
     if (this->mem_region != NULL) {
