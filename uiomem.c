@@ -66,7 +66,7 @@ MODULE_DESCRIPTION("User space mappable io-memory device driver");
 MODULE_AUTHOR("ikwzm");
 MODULE_LICENSE("Dual BSD/GPL");
 
-#define DRIVER_VERSION     "1.1.0-alpha.3"
+#define DRIVER_VERSION     "1.1.0-alpha.4"
 #define DRIVER_NAME        "uiomem"
 #define DEVICE_NAME_FORMAT "uiomem%d"
 #define DEVICE_MAX_NUM      256
@@ -128,6 +128,8 @@ struct uiomem_object {
     u64                  sync_for_cpu;
     u64                  sync_for_device;
     struct resource*     mem_region;
+    bool                 cached;
+    bool                 coherent;
     bool                 shareable;
 };
 
@@ -353,6 +355,8 @@ static inline void _uiomem_sync_for_dev(
  * * /sys/class/uiomem/<device-name>/driver_version
  * * /sys/class/uiomem/<device-name>/phys_addr
  * * /sys/class/uiomem/<device-name>/size
+ * * /sys/class/uiomem/<device-name>/cached
+ * * /sys/class/uiomem/<device-name>/coherent
  * * /sys/class/uiomem/<device-name>/shareable
  * * /sys/class/uiomem/<device-name>/sync_mode
  * * /sys/class/uiomem/<device-name>/sync_offset
@@ -431,7 +435,9 @@ static int uiomem_sync_for_cpu(struct uiomem_object* this)
         enum uiomem_direction   direction;
         status = uiomem_sync_command_argments(this, command, &virt_addr, &phys_addr, &size, &direction);
         if (status == 0) {
-            _uiomem_sync_for_cpu(this, virt_addr, phys_addr, size, direction);
+            if (this->coherent == false) {
+                _uiomem_sync_for_cpu(this, virt_addr, phys_addr, size, direction);
+            }
             this->sync_for_cpu = 0;
             this->sync_owner   = 0;
         }
@@ -456,7 +462,9 @@ static int uiomem_sync_for_device(struct uiomem_object* this)
         enum uiomem_direction   direction;
         status = uiomem_sync_command_argments(this, command, &virt_addr, &phys_addr, &size, &direction);
         if (status == 0) {
-            _uiomem_sync_for_dev(this, virt_addr, phys_addr, size, direction);
+            if (this->coherent == false) {
+                _uiomem_sync_for_dev(this, virt_addr, phys_addr, size, direction);
+            }
             this->sync_for_device = 0;
             this->sync_owner      = 1;
         }
@@ -499,6 +507,8 @@ static ssize_t uiomem_set_ ## __attr_name(struct device *dev, struct device_attr
 DEF_ATTR_SHOW(driver_version , "%s\n"    , DRIVER_VERSION                                 );
 DEF_ATTR_SHOW(size           , "%zu\n"   , this->size                                     );
 DEF_ATTR_SHOW(phys_addr      , "%pad\n"  , &this->phys_addr                               );
+DEF_ATTR_SHOW(cached         , "%d\n"    , this->cached                                   );
+DEF_ATTR_SHOW(coherent       , "%d\n"    , this->coherent                                 );
 DEF_ATTR_SHOW(shareable      , "%d\n"    , this->shareable                                );
 DEF_ATTR_SHOW(sync_mode      , "%d\n"    , this->sync_mode                                );
 DEF_ATTR_SET( sync_mode                  , 0, 7,        NO_ACTION, NO_ACTION              );
@@ -518,6 +528,8 @@ static struct device_attribute uiomem_device_attrs[] = {
   __ATTR(driver_version , 0444, uiomem_show_driver_version  , NULL                        ),
   __ATTR(size           , 0444, uiomem_show_size            , NULL                        ),
   __ATTR(phys_addr      , 0444, uiomem_show_phys_addr       , NULL                        ),
+  __ATTR(cached         , 0444, uiomem_show_cached          , NULL                        ),
+  __ATTR(coherent       , 0444, uiomem_show_coherent        , NULL                        ),
   __ATTR(shareable      , 0444, uiomem_show_shareable       , NULL                        ),
   __ATTR(sync_mode      , 0664, uiomem_show_sync_mode       , uiomem_set_sync_mode        ),
   __ATTR(sync_offset    , 0664, uiomem_show_sync_offset     , uiomem_set_sync_offset      ),
@@ -634,13 +646,15 @@ static inline void vm_flags_set(struct vm_area_struct* vma, vm_flags_t flags)
 static int uiomem_device_file_mmap(struct file *file, struct vm_area_struct* vma)
 {
     struct uiomem_object* this = file->private_data;
-    unsigned long              page_frame_num;
-    unsigned long              map_area_size;
+    unsigned long         page_frame_num;
+    unsigned long         map_area_size;
 
     if (vma->vm_pgoff + vma_pages(vma) > (this->size >> PAGE_SHIFT))
         return -ENXIO;
 
-    if ((file->f_flags & O_SYNC) | (this->sync_mode & SYNC_ALWAYS)) {
+    if (((file->f_flags   & O_SYNC     ) != 0    ) ||
+        ((this->sync_mode & SYNC_ALWAYS) != 0    ) ||
+        ((this->cached                 ) == false)) {
         switch (this->sync_mode & SYNC_MODE_MASK) {
             case SYNC_MODE_NONCACHED :
                 vma->vm_page_prot = _PGPROT_NONCACHED(vma->vm_page_prot);
@@ -696,14 +710,18 @@ static ssize_t uiomem_device_file_read(struct file* file, char __user* buff, siz
     virt_addr = this->virt_addr + *ppos;
     xfer_size = (*ppos + count >= this->size) ? this->size - *ppos : count;
 
-    _uiomem_sync_for_cpu(this, virt_addr, phys_addr, xfer_size, UIOMEM_READ_ONLY);
+    if (this->coherent == false) {
+        _uiomem_sync_for_cpu(this, virt_addr, phys_addr, xfer_size, UIOMEM_READ_ONLY);
+    }
 
     if ((remain_size = copy_to_user(buff, virt_addr, xfer_size)) != 0) {
         result = 0;
         goto return_unlock;
     }
 
-    _uiomem_sync_for_dev(this, virt_addr, phys_addr, xfer_size, UIOMEM_READ_ONLY);
+    if (this->coherent == false) {
+        _uiomem_sync_for_dev(this, virt_addr, phys_addr, xfer_size, UIOMEM_READ_ONLY);
+    }
 
     *ppos += xfer_size;
     result = xfer_size;
@@ -741,14 +759,18 @@ static ssize_t uiomem_device_file_write(struct file* file, const char __user* bu
     virt_addr = this->virt_addr + *ppos;
     xfer_size = (*ppos + count >= this->size) ? this->size - *ppos : count;
 
-    _uiomem_sync_for_cpu(this, virt_addr, phys_addr, xfer_size, UIOMEM_WRITE_ONLY);
+    if (this->coherent == false) {
+        _uiomem_sync_for_cpu(this, virt_addr, phys_addr, xfer_size, UIOMEM_WRITE_ONLY);
+    }
 
     if ((remain_size = copy_from_user(virt_addr, buff, xfer_size)) != 0) {
         result = 0;
         goto return_unlock;
     }
 
-    _uiomem_sync_for_dev(this, virt_addr, phys_addr, xfer_size, UIOMEM_WRITE_ONLY);
+    if (this->coherent == false) {
+        _uiomem_sync_for_dev(this, virt_addr, phys_addr, xfer_size, UIOMEM_WRITE_ONLY);
+    }
 
     *ppos += xfer_size;
     result = xfer_size;
@@ -952,10 +974,16 @@ static int uiomem_object_setup(struct uiomem_object* this, phys_addr_t phys_addr
     /*
      * setup virtual address
      */
-    this->virt_addr = memremap(this->phys_addr, this->size, MEMREMAP_WB);
+    this->virt_addr = memremap(this->phys_addr,
+                               this->size,
+                               (this->cached == true)?  MEMREMAP_WB  :  MEMREMAP_WC );
     if (IS_ERR_OR_NULL(this->virt_addr)) {
         int retval = PTR_ERR(this->virt_addr);
-        dev_err(this->sys_dev, "memremap(addr=%pad,size=%zu,MEMREMAP_WB) failed. return(%d)\n", &this->phys_addr, this->size, retval);
+        dev_err(this->sys_dev, "memremap(addr=%pad,size=%zu,%s) failed. return(%d)\n",
+                               &this->phys_addr,
+                               this->size,
+                               (this->cached == true)? "MEMREMAP_WB" : "MEMREMAP_WC",
+                               retval);
         this->virt_addr = NULL;
         return (retval == 0) ? -ENOMEM : retval;
     }
@@ -973,6 +1001,8 @@ static void uiomem_object_info(struct uiomem_object* this)
     dev_info(this->sys_dev, "minor number   = %d\n"  , MINOR(this->device_number));
     dev_info(this->sys_dev, "range address  = %pad\n", &this->phys_addr);
     dev_info(this->sys_dev, "range size     = %zu\n" , this->size);
+    dev_info(this->sys_dev, "cached         = %d\n"  , this->cached);
+    dev_info(this->sys_dev, "coherent       = %d\n"  , this->coherent);
     dev_info(this->sys_dev, "shareable      = %d\n"  , this->shareable);
 }
 
@@ -1115,8 +1145,10 @@ static inline int uiomem_get_option_property(struct device *dev, u64* value)
     return device_property_read_u64(dev, "option", value);
 }
 /**
- * uiomem_get_option_shareable()   - Get sharable property from option value.
- * @option:     option. shareable  = option[0:0]
+ * uiomem_get_option_shareable()   - Get shareable property from option[0:0].
+ * uiomem_get_option_cached()      - Get cached    property from option[1:1].
+ * uiomem_get_option_coherent()    - Get coherent  property from option[2:2].
+ * @option:     option.
  */
 #define DEFINE_UIOMEM_OPTION(name,type,lo,hi)             \
 static inline type uiomem_get_option_ ## name(u64 option) \
@@ -1124,7 +1156,12 @@ static inline type uiomem_get_option_ ## name(u64 option) \
     const u64 mask = ((1UL << ((hi)-(lo)+1))-1);          \
     return (type)((option >> (lo)) & mask);               \
 }
-DEFINE_UIOMEM_OPTION(shareable, bool, 0, 1)
+DEFINE_UIOMEM_OPTION(shareable, bool, 0, 0)
+DEFINE_UIOMEM_OPTION(cached   , bool, 1, 1)
+DEFINE_UIOMEM_OPTION(coherent , bool, 2, 2)
+
+#define UIOMEM_STATIC_DEVICE_OPTION_DEFAULT (2) /* coherent=false, cache=true, shareable=false */
+#define UIOMEM_STATIC_DEVICE_OPTION_DESC " coherent=option[2],cache=option[1],shareable=option[0]"
 
 /**
  * uiomem_device_list_search()    - Search uiomem device entry from list by name or number.
@@ -1568,6 +1605,25 @@ static int uiomem_platform_device_probe(struct device *dev, struct resource* res
         obj->shareable = false;
     }
     /*
+     * cache property
+     */
+    if        (of_property_read_bool(dev->of_node, "cache-off"        )) {
+        obj->cached   = false;
+        obj->coherent = true;
+    } else if (of_property_read_bool(dev->of_node, "cache-noncoherent")) {
+        obj->cached   = true;
+        obj->coherent = false;
+    } else if (of_property_read_bool(dev->of_node, "cache-coherent"   )) {
+        obj->cached   = true;
+        obj->coherent = true;
+    } else if (uiomem_get_option_property(dev, &u64_value) == 0) {
+        obj->cached   = uiomem_get_option_cached(u64_value);
+        obj->coherent = uiomem_get_option_coherent(u64_value);
+    } else {
+        obj->cached   = true;
+        obj->coherent = false;
+    }
+    /*
      * set mem_region and mem_addr and mem_size
      */
     if (obj->shareable == true) {
@@ -1669,9 +1725,10 @@ failed:
     static ulong     uiomem ## __num ## _size = 0;                                  \
     module_param(    uiomem ## __num ## _size, ulong, S_IRUGO);                     \
     MODULE_PARM_DESC(uiomem ## __num ## _size, DRIVER_NAME #__num " range size");   \
-    static ulong     uiomem ## __num ## _option = 0;                                \
+    static ulong     uiomem ## __num ## _option = UIOMEM_STATIC_DEVICE_OPTION_DEFAULT;\
     module_param(    uiomem ## __num ## _option, ulong, S_IRUGO);                   \
-    MODULE_PARM_DESC(uiomem ## __num ## _option, DRIVER_NAME #__num " option");
+    MODULE_PARM_DESC(uiomem ## __num ## _option, DRIVER_NAME #__num                 \
+                                                 UIOMEM_STATIC_DEVICE_OPTION_DESC );
 
 #define CALL_UIOMEM_STATIC_DEVICE_CREATE(__num)                         \
     if (uiomem ## __num ## _size != 0) {                                \
