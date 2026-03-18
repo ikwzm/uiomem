@@ -66,7 +66,7 @@ MODULE_DESCRIPTION("User space mappable io-memory device driver");
 MODULE_AUTHOR("ikwzm");
 MODULE_LICENSE("Dual BSD/GPL");
 
-#define DRIVER_VERSION     "1.1.0-alpha.4"
+#define DRIVER_VERSION     "1.1.0-alpha.5"
 #define DRIVER_NAME        "uiomem"
 #define DEVICE_NAME_FORMAT "uiomem%d"
 #define DEVICE_MAX_NUM      256
@@ -157,7 +157,34 @@ enum uiomem_direction {
 #define SYNC_ALWAYS             (0x04)
 
 /**
- * DOC: Data Cache Clean/Invalid for arm64 architecture.
+ * DOC: Data Cache Clean/Invalid Operations using PMEM API
+ *
+ * This section defines arch_sync_for_cpu() and arch_sync_for_dev().
+ *
+ * * arch_sync_for_cpu() - _uiomem_sync_for_cpu() using PMEM API
+ * * arch_sync_for_dev() - _uiomem_sync_for_dev() using PMEM API
+ */
+#if (defined(CONFIG_ARCH_HAS_PMEM_API))
+#ifndef UIOMEM_CACHE_SYNC_OPERATION
+#define UIOMEM_CACHE_SYNC_OPERATION "PMEM API"
+#include <linux/libnvdimm.h>
+static void arch_sync_for_cpu(void* virt_start, phys_addr_t phys_start, size_t size, enum uiomem_direction direction)
+{
+    if (direction != UIOMEM_WRITE_ONLY)
+        arch_invalidate_pmem(virt_start, size);
+}
+static void arch_sync_for_dev(void* virt_start, phys_addr_t phys_start, size_t size, enum uiomem_direction direction)
+{
+    if (direction == UIOMEM_READ_ONLY)
+        arch_invalidate_pmem(virt_start, size);
+    else
+        arch_wb_cache_pmem(virt_start, size);
+}
+#endif /* #ifndef UIOMEM_CACHE_SYNC_OPERATION */
+#endif /* #if (defined(CONFIG_ARCH_HAS_PMEM_API)) */
+
+/**
+ * DOC: Data Cache Clean/Invalid Operations for arm64 architecture.
  *
  * This section defines arch_sync_for_cpu() and arch_sync_for_dev().
  *
@@ -168,6 +195,8 @@ enum uiomem_direction {
  * * arch_sync_for_dev()               - _uiomem_sync_for_dev() for arm64
  */
 #if (defined(CONFIG_ARM64))
+#ifndef UIOMEM_CACHE_SYNC_OPERATION
+#define UIOMEM_CACHE_SYNC_OPERATION "ARM64 Native"
 static inline u64  arm64_read_dcache_line_size(void)
 {
     u64       ctr;
@@ -223,10 +252,11 @@ static void arch_sync_for_dev(void* virt_start, phys_addr_t phys_start, size_t s
     else
         arm64_clean_dcache_area(virt_start, size);
 }
-#endif
+#endif /* #ifndef UIOMEM_CACHE_SYNC_OPERATION */
+#endif /* #if (defined(CONFIG_ARM64)) */
 
 /**
- * DOC: Data Cache Clean/Invalid for armv7 architecture.
+ * DOC: Data Cache Clean/Invalid Operations for armv7 architecture.
  *
  * This section defines arch_sync_for_cpu() and arch_sync_for_dev().
  *
@@ -237,6 +267,8 @@ static void arch_sync_for_dev(void* virt_start, phys_addr_t phys_start, size_t s
  * * arch_sync_for_dev()               - _uiomem_sync_for_dev() for armv7
  */
 #if (defined(CONFIG_ARM) && defined(CONFIG_CPU_V7))
+#ifndef UIOMEM_CACHE_SYNC_OPERATION
+#define UIOMEM_CACHE_SYNC_OPERATION "ARMV7 Native"
 static inline u32  armv7_read_dcache_line_size(void)
 {
     u32       ctr;
@@ -296,7 +328,8 @@ static void arch_sync_for_dev(void* virt_start, phys_addr_t phys_start, size_t s
         outer_clean_range(phys_start, phys_start + size);
     }
 }
-#endif
+#endif /* #ifndef UIOMEM_CACHE_SYNC_OPERATION */
+#endif /* #if (defined(CONFIG_ARM) && defined(CONFIG_CPU_V7)) */
 
 /**
  * DOC: Data Cache Clean/Invalid for architecuture independent.
@@ -317,12 +350,14 @@ static void arch_sync_for_dev(void* virt_start, phys_addr_t phys_start, size_t s
  */
 static inline void _uiomem_sync_for_cpu(
   struct uiomem_object*  this      ,
-  void*                       virt_addr ,
-  phys_addr_t                 phys_addr ,
-  size_t                      size      ,
-  enum uiomem_direction       direction
+  void*                  virt_addr ,
+  phys_addr_t            phys_addr ,
+  size_t                 size      ,
+  enum uiomem_direction  direction
 ) {
+#ifdef UIOMEM_CACHE_SYNC_OPERATION
     arch_sync_for_cpu(virt_addr, phys_addr, size, direction);
+#endif
 }
 
 /**
@@ -336,12 +371,14 @@ static inline void _uiomem_sync_for_cpu(
  */
 static inline void _uiomem_sync_for_dev(
   struct uiomem_object*  this      ,
-  void*                       virt_addr ,
-  phys_addr_t                 phys_addr ,
-  size_t                      size      ,
-  enum uiomem_direction       direction
+  void*                  virt_addr ,
+  phys_addr_t            phys_addr ,
+  size_t                 size      ,
+  enum uiomem_direction  direction
 ) {
+#ifdef UIOMEM_CACHE_SYNC_OPERATION
     arch_sync_for_dev(virt_addr, phys_addr, size, direction);
+#endif
 }
 
 /**
@@ -523,6 +560,11 @@ DEF_ATTR_SHOW(sync_for_cpu   , "%llu\n"  , this->sync_for_cpu                   
 DEF_ATTR_SET( sync_for_cpu               , 0, U64_MAX,  NO_ACTION, uiomem_sync_for_cpu    );
 DEF_ATTR_SHOW(sync_for_device, "%llu\n"  , this->sync_for_device                          );
 DEF_ATTR_SET( sync_for_device            , 0, U64_MAX,  NO_ACTION, uiomem_sync_for_device );
+#ifdef UIOMEM_CACHE_SYNC_OPERATION
+DEF_ATTR_SHOW(sync_operation , "%s\n"    , UIOMEM_CACHE_SYNC_OPERATION                    );
+#else
+DEF_ATTR_SHOW(sync_operation , "%s\n"    , "NONE"                                         );
+#endif
 
 static struct device_attribute uiomem_device_attrs[] = {
   __ATTR(driver_version , 0444, uiomem_show_driver_version  , NULL                        ),
@@ -531,6 +573,7 @@ static struct device_attribute uiomem_device_attrs[] = {
   __ATTR(cached         , 0444, uiomem_show_cached          , NULL                        ),
   __ATTR(coherent       , 0444, uiomem_show_coherent        , NULL                        ),
   __ATTR(shareable      , 0444, uiomem_show_shareable       , NULL                        ),
+  __ATTR(sync_operation , 0444, uiomem_show_sync_operation  , NULL                        ),
   __ATTR(sync_mode      , 0664, uiomem_show_sync_mode       , uiomem_set_sync_mode        ),
   __ATTR(sync_offset    , 0664, uiomem_show_sync_offset     , uiomem_set_sync_offset      ),
   __ATTR(sync_size      , 0664, uiomem_show_sync_size       , uiomem_set_sync_size        ),
@@ -1003,6 +1046,11 @@ static void uiomem_object_info(struct uiomem_object* this)
     dev_info(this->sys_dev, "range size     = %zu\n" , this->size);
     dev_info(this->sys_dev, "cached         = %d\n"  , this->cached);
     dev_info(this->sys_dev, "coherent       = %d\n"  , this->coherent);
+#ifdef UIOMEM_CACHE_SYNC_OPERATION
+    dev_info(this->sys_dev, "sync_operation = %s\n"  , UIOMEM_CACHE_SYNC_OPERATION);
+#else
+    dev_info(this->sys_dev, "sync_operation = %s\n"  , "NONE");
+#endif
     dev_info(this->sys_dev, "shareable      = %d\n"  , this->shareable);
 }
 
@@ -1618,11 +1666,19 @@ static int uiomem_platform_device_probe(struct device *dev, struct resource* res
         obj->coherent = true;
     } else if (uiomem_get_option_property(dev, &u64_value) == 0) {
         obj->cached   = uiomem_get_option_cached(u64_value);
-        obj->coherent = uiomem_get_option_coherent(u64_value);
+        obj->coherent = (obj->cached == false) ? true :
+                        uiomem_get_option_coherent(u64_value);
     } else {
         obj->cached   = true;
         obj->coherent = false;
     }
+#ifndef UIOMEM_CACHE_SYNC_OPERATION
+    if (obj->coherent == false) {
+        dev_warn(dev, "coherent=false, but cache synchronization not supported, forcing cache off.\n");
+        obj->cached   = false;
+        obj->coherent = true;
+    }
+#endif
     /*
      * set mem_region and mem_addr and mem_size
      */
