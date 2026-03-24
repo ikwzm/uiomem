@@ -66,11 +66,12 @@ MODULE_DESCRIPTION("User space mappable io-memory device driver");
 MODULE_AUTHOR("ikwzm");
 MODULE_LICENSE("Dual BSD/GPL");
 
-#define DRIVER_VERSION     "1.1.0-alpha.5"
+#define DRIVER_VERSION     "1.1.0-alpha.6"
 #define DRIVER_NAME        "uiomem"
 #define DEVICE_NAME_FORMAT "uiomem%d"
 #define DEVICE_MAX_NUM      256
 #define UIOMEM_DEBUG        1
+#define IOCTL_VERSION       1
 
 #if     (UIOMEM_DEBUG == 1)
 #define UIOMEM_DEBUG_CHECK(this,debug) (this->debug)
@@ -402,6 +403,7 @@ static inline void _uiomem_sync_for_dev(
  * * /sys/class/uiomem/<device-name>/sync_owner
  * * /sys/class/uiomem/<device-name>/sync_for_cpu
  * * /sys/class/uiomem/<device-name>/sync_for_device
+ * * /sys/class/uiomem/<device-name>/ioctl_version
  * * 
  */
 
@@ -565,6 +567,9 @@ DEF_ATTR_SHOW(sync_operation , "%s\n"    , UIOMEM_CACHE_SYNC_OPERATION          
 #else
 DEF_ATTR_SHOW(sync_operation , "%s\n"    , "NONE"                                         );
 #endif
+#if (IOCTL_VERSION > 0)
+DEF_ATTR_SHOW(ioctl_version  , "%d\n"    , (int)(IOCTL_VERSION)                           );
+#endif
 
 static struct device_attribute uiomem_device_attrs[] = {
   __ATTR(driver_version , 0444, uiomem_show_driver_version  , NULL                        ),
@@ -581,6 +586,9 @@ static struct device_attribute uiomem_device_attrs[] = {
   __ATTR(sync_owner     , 0444, uiomem_show_sync_owner      , NULL                        ),
   __ATTR(sync_for_cpu   , 0664, uiomem_show_sync_for_cpu    , uiomem_set_sync_for_cpu     ),
   __ATTR(sync_for_device, 0664, uiomem_show_sync_for_device , uiomem_set_sync_for_device  ),
+#if (IOCTL_VERSION > 0)
+  __ATTR(ioctl_version  , 0444, uiomem_show_ioctl_version   , NULL                        ),
+#endif
   __ATTR_NULL,
 };
 
@@ -854,16 +862,261 @@ static loff_t uiomem_device_file_llseek(struct file* file, loff_t offset, int wh
 }
 
 /**
+ * uiomem-ioctl.h - uiomem ioctl header file
+ *
+ * This source code(uiomem.c) has built-in header file(uiomem-ioctl.h) 
+ * so that it can be built with only one source code.
+ * To generate a header file (uiomem-ioctl.h) from this source code (uiomem.c), 
+ * do the following
+ * 
+ * sed -n '/^\/\*\*\*\*\*\*\*\*\*\*\**$/,/\**\*\*\*\*\*\*\*\*\*\*\/$/p' uiomem.c >  uiomem-ioctl.h
+ * sed -n '/^#ifndef.*UIOMEM_IOCTL_H/,/^#endif.*UIOMEM_IOCTL_H/p'       uiomem.c >> uiomem-ioctl.h
+ * 
+ */
+#if (IOCTL_VERSION > 0)
+#ifndef  UIOMEM_IOCTL_H
+#define  UIOMEM_IOCTL_H
+#include <linux/ioctl.h>
+
+#define DEFINE_UIOMEM_IOCTL_FLAGS(name,type,lo,hi)                     \
+static const  int      UIOMEM_IOCTL_FLAGS_ ## name ## _SHIFT = (lo);   \
+static const  uint64_t UIOMEM_IOCTL_FLAGS_ ## name ## _MASK  = (((uint64_t)1UL << ((hi)-(lo)+1))-1); \
+static inline void SET_UIOMEM_IOCTL_FLAGS_ ## name(type *p, int value) \
+{                                                                      \
+    const int      shift = UIOMEM_IOCTL_FLAGS_ ## name ## _SHIFT;      \
+    const uint64_t mask  = UIOMEM_IOCTL_FLAGS_ ## name ## _MASK;       \
+    p->flags &= ~(mask << shift);                                      \
+    p->flags |= ((value & mask) << shift);                             \
+}                                                                      \
+static inline int  GET_UIOMEM_IOCTL_FLAGS_ ## name(type *p)            \
+{                                                                      \
+    const int      shift = UIOMEM_IOCTL_FLAGS_ ## name ## _SHIFT;      \
+    const uint64_t mask  = UIOMEM_IOCTL_FLAGS_ ## name ## _MASK;       \
+    return (int)((p->flags >> shift) & mask);                          \
+}
+
+typedef struct {
+    uint64_t flags;
+    char     version[16];
+    char     sync_operation[16];
+} uiomem_ioctl_drv_info;
+
+DEFINE_UIOMEM_IOCTL_FLAGS(IOCTL_VERSION, uiomem_ioctl_drv_info ,  0,  7)
+
+typedef struct {
+    uint64_t flags;
+    uint64_t size;
+    uint64_t addr;
+} uiomem_ioctl_dev_info;
+
+DEFINE_UIOMEM_IOCTL_FLAGS(SHAREABLE    , uiomem_ioctl_dev_info ,  0,  0)
+DEFINE_UIOMEM_IOCTL_FLAGS(CACHED       , uiomem_ioctl_dev_info ,  1,  1)
+DEFINE_UIOMEM_IOCTL_FLAGS(COHERENT     , uiomem_ioctl_dev_info ,  2,  2)
+
+typedef struct {
+    uint64_t flags;
+    uint64_t size;
+    uint64_t offset;
+} uiomem_ioctl_sync_args;
+
+DEFINE_UIOMEM_IOCTL_FLAGS(SYNC_CMD     , uiomem_ioctl_sync_args,  0,  1)
+DEFINE_UIOMEM_IOCTL_FLAGS(SYNC_DIR     , uiomem_ioctl_sync_args,  2,  3)
+DEFINE_UIOMEM_IOCTL_FLAGS(SYNC_MODE    , uiomem_ioctl_sync_args,  8, 15)
+DEFINE_UIOMEM_IOCTL_FLAGS(SYNC_OWNER   , uiomem_ioctl_sync_args, 16, 16)
+
+enum {
+    UIOMEM_IOCTL_FLAGS_SYNC_CMD_FOR_CPU    = 1,
+    UIOMEM_IOCTL_FLAGS_SYNC_CMD_FOR_DEVICE = 3
+};
+
+#define UIOMEM_IOCTL_MAGIC               'U'
+#define UIOMEM_IOCTL_GET_DRV_INFO        _IOR (UIOMEM_IOCTL_MAGIC, 1, uiomem_ioctl_drv_info)
+#define UIOMEM_IOCTL_GET_SIZE            _IOR (UIOMEM_IOCTL_MAGIC, 2, uint64_t)
+#define UIOMEM_IOCTL_GET_PHYS_ADDR       _IOR (UIOMEM_IOCTL_MAGIC, 3, uint64_t)
+#define UIOMEM_IOCTL_GET_SYNC_OWNER      _IOR (UIOMEM_IOCTL_MAGIC, 4, uint32_t)
+#define UIOMEM_IOCTL_SET_SYNC_FOR_CPU    _IOW (UIOMEM_IOCTL_MAGIC, 5, uint64_t)
+#define UIOMEM_IOCTL_SET_SYNC_FOR_DEVICE _IOW (UIOMEM_IOCTL_MAGIC, 6, uint64_t)
+#define UIOMEM_IOCTL_GET_DEV_INFO        _IOR (UIOMEM_IOCTL_MAGIC, 7, uiomem_ioctl_dev_info)
+#define UIOMEM_IOCTL_GET_SYNC            _IOR (UIOMEM_IOCTL_MAGIC, 8, uiomem_ioctl_sync_args)
+#define UIOMEM_IOCTL_SET_SYNC            _IOW (UIOMEM_IOCTL_MAGIC, 9, uiomem_ioctl_sync_args)
+
+#endif /* #ifndef UIOMEM_IOCTL_H */
+#endif /* #if (IOCTL_VERSION > 0) */
+
+/**
+ * uiomem_device_file_ioctl() - uiomem device file ioctl operation.
+ * @file:       Pointer to the file structure.
+ * @cmd:        The ioctl command to be executed.
+ * @arg:        Pointer to user space data associated with the ioctl command.
+ * Return:      Success(=0) or error status(<0).
+ */
+#if (IOCTL_VERSION > 0)
+static long uiomem_device_file_ioctl(struct file* file, unsigned int cmd, unsigned long arg)
+{
+    struct uiomem_object*  this   = file->private_data;
+    void __user*           argp   = (void __user*)arg;
+    int                    result = 0;
+
+    switch(cmd) {
+        case UIOMEM_IOCTL_GET_DRV_INFO: {
+            uiomem_ioctl_drv_info drv_info = {0};
+            SET_UIOMEM_IOCTL_FLAGS_IOCTL_VERSION(&drv_info, IOCTL_VERSION);
+            if (strscpy(&drv_info.version[0], DRIVER_VERSION, sizeof(drv_info.version)) < 0) {
+                result = -EFAULT;
+                break;
+            }
+#ifdef UIOMEM_CACHE_SYNC_OPERATION
+            if (strscpy(&drv_info.sync_operation[0], UIOMEM_CACHE_SYNC_OPERATION, sizeof(drv_info.sync_operation)) < 0) {
+                result = -EFAULT;
+                break;
+            }
+#endif
+            if (copy_to_user(argp, &drv_info, sizeof(drv_info)) != 0)
+                result = -EFAULT;
+            else 
+                result = 0;
+            break;
+        }
+        case UIOMEM_IOCTL_GET_SIZE: {
+            uint64_t size = (uint64_t)this->size;
+            if (copy_to_user(argp, &size, sizeof(size)) != 0)
+                result = -EFAULT;
+            else 
+                result = 0;
+            break;
+        }
+        case UIOMEM_IOCTL_GET_PHYS_ADDR: {
+            uint64_t phys_addr = (uint64_t)this->phys_addr;
+            if (copy_to_user(argp, &phys_addr, sizeof(phys_addr)) != 0)
+                result = -EFAULT;
+            else 
+                result = 0;
+            break;
+        }
+        case UIOMEM_IOCTL_GET_SYNC_OWNER: {
+            uint32_t sync_owner = (uint32_t)this->sync_owner;
+            if (copy_to_user(argp, &sync_owner, sizeof(sync_owner)) != 0)
+                result = -EFAULT;
+            else 
+                result = 0;
+            break;
+        }
+        case UIOMEM_IOCTL_GET_DEV_INFO: {
+            uiomem_ioctl_dev_info dev_info = {0};
+            SET_UIOMEM_IOCTL_FLAGS_SHAREABLE(&dev_info, this->shareable);
+            SET_UIOMEM_IOCTL_FLAGS_CACHED   (&dev_info, this->cached   );
+            SET_UIOMEM_IOCTL_FLAGS_COHERENT (&dev_info, this->coherent );
+            dev_info.size = (uint64_t)(this->size);
+            dev_info.addr = (uint64_t)(this->phys_addr);
+            if (copy_to_user(argp, &dev_info, sizeof(dev_info)) != 0)
+                result = -EFAULT;
+            else 
+                result = 0;
+            break;
+        }
+        case UIOMEM_IOCTL_GET_SYNC: {
+            uiomem_ioctl_sync_args sync_args = {0};
+            SET_UIOMEM_IOCTL_FLAGS_SYNC_DIR  (&sync_args, this->sync_direction);
+            SET_UIOMEM_IOCTL_FLAGS_SYNC_MODE (&sync_args, this->sync_mode);
+            SET_UIOMEM_IOCTL_FLAGS_SYNC_OWNER(&sync_args, this->sync_owner);
+            sync_args.size   = (uint64_t)this->sync_size;
+            sync_args.offset = (uint64_t)this->sync_offset;
+            if (copy_to_user(argp, &sync_args, sizeof(sync_args)) != 0)
+                result = -EFAULT;
+            else 
+                result = 0;
+            break;
+        }
+        case UIOMEM_IOCTL_SET_SYNC: {
+            uiomem_ioctl_sync_args sync_args;
+            if (copy_from_user(&sync_args, argp, sizeof(sync_args)) != 0)
+                result = -EFAULT;
+            else {
+                int    sync_command   = GET_UIOMEM_IOCTL_FLAGS_SYNC_CMD (&sync_args);
+                int    sync_direction = GET_UIOMEM_IOCTL_FLAGS_SYNC_DIR (&sync_args);
+                int    sync_mode      = GET_UIOMEM_IOCTL_FLAGS_SYNC_MODE(&sync_args);
+                u64    sync_offset    = (u64)(sync_args.offset);
+                size_t sync_size      = (size_t)(sync_args.size);
+                switch(sync_direction) {
+                    case 0   : this->sync_direction = 0; break;
+                    case 1   : this->sync_direction = 1; break;
+                    case 2   : this->sync_direction = 2; break;
+                    default  : /* none */                break;
+                }
+                if (sync_mode   >  0) {this->sync_mode   = sync_mode  ;}
+                if (sync_offset >= 0) {this->sync_offset = sync_offset;}
+                if (sync_size   >  0) {this->sync_size   = sync_size  ;}
+                switch(sync_command) {
+                    case UIOMEM_IOCTL_FLAGS_SYNC_CMD_FOR_CPU:
+                        this->sync_for_cpu = 1;
+                        result = uiomem_sync_for_cpu(this);
+                        break;
+                    case UIOMEM_IOCTL_FLAGS_SYNC_CMD_FOR_DEVICE:
+                        this->sync_for_device = 1;
+                        result = uiomem_sync_for_device(this);
+                        break;
+                    default  :
+                        result = 0;
+                        break;
+                }
+            }
+            break;
+        }
+        case UIOMEM_IOCTL_SET_SYNC_FOR_CPU: {
+            u64 sync_args;
+            if (copy_from_user(&sync_args, argp, sizeof(sync_args)) != 0)
+                result = -EFAULT;
+            else {
+                this->sync_for_cpu = sync_args;
+                result = uiomem_sync_for_cpu(this);
+            }
+            break;
+        }
+        case UIOMEM_IOCTL_SET_SYNC_FOR_DEVICE: {
+            u64 sync_args;
+            if (copy_from_user(&sync_args, argp, sizeof(sync_args)) != 0)
+                result = -EFAULT;
+            else {
+                this->sync_for_device = sync_args;
+                result = uiomem_sync_for_device(this);
+            }
+            break;
+        }
+        default:
+            result = -ENOTTY;
+    }
+    return (long)result;
+}
+
+#if defined(CONFIG_COMPAT) && (LINUX_VERSION_CODE < KERNEL_VERSION(5, 4, 4))
+static long compat_ptr_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
+{
+	if (!file->f_op->unlocked_ioctl)
+		return -ENOIOCTLCMD;
+
+	return file->f_op->unlocked_ioctl(file, cmd, (unsigned long)compat_ptr(arg));
+}
+#endif
+
+#endif /* #if (IOCTL_VERSION > 0) */
+
+/**
  * uiomem device file operation table.
  */
 static const struct file_operations uiomem_device_file_ops = {
-    .owner   = THIS_MODULE,
-    .open    = uiomem_device_file_open,
-    .release = uiomem_device_file_release,
-    .mmap    = uiomem_device_file_mmap,
-    .read    = uiomem_device_file_read,
-    .write   = uiomem_device_file_write,
-    .llseek  = uiomem_device_file_llseek,
+    .owner          = THIS_MODULE,
+    .open           = uiomem_device_file_open,
+    .release        = uiomem_device_file_release,
+    .mmap           = uiomem_device_file_mmap,
+    .read           = uiomem_device_file_read,
+    .write          = uiomem_device_file_write,
+    .llseek         = uiomem_device_file_llseek,
+#if (IOCTL_VERSION > 0)
+    .unlocked_ioctl = uiomem_device_file_ioctl,
+#ifdef CONFIG_COMPAT
+    .compat_ioctl   = compat_ptr_ioctl,
+#endif
+#endif
 };
 
 /**
@@ -1040,6 +1293,9 @@ static int uiomem_object_setup(struct uiomem_object* this, phys_addr_t phys_addr
 static void uiomem_object_info(struct uiomem_object* this)
 {
     dev_info(this->sys_dev, "driver version = %s\n"  , DRIVER_VERSION);
+#if (IOCTL_VERSION > 0)
+    dev_info(this->sys_dev, "ioctl version  = %d\n"  , IOCTL_VERSION);
+#endif
     dev_info(this->sys_dev, "major number   = %d\n"  , MAJOR(this->device_number));
     dev_info(this->sys_dev, "minor number   = %d\n"  , MINOR(this->device_number));
     dev_info(this->sys_dev, "range address  = %pad\n", &this->phys_addr);
