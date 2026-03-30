@@ -35,9 +35,10 @@ Some platforms allow to specify them in the device tree.
 
 ## Supported platforms
 
-* OS : Linux Kernel Version 4.19, 5.4, 6.1, 6.6, 6.12 (the author tested on 5.4 and 6.1 and 6.12).
+* OS : Linux Kernel Version 4.19, 5.4, 6.1, 6.6, 6.12 (the author tested on 5.4 and 6.1 and 6.6 and 6.12).
 * CPU: ARMv7 Cortex-A9 (Xilinx ZYNQ / Altera CycloneV SoC)
 * CPU: ARM64 Cortex-A53 (Xilinx ZYNQ UltraScale+ MPSoC)
+* CPU: RISC-V (Microchip PolarFire SoC)
 
 # Usage
 
@@ -57,10 +58,20 @@ obj-$(CONFIG_UIOMEM) += uiomem.o
 #
 # For out of kernel tree variables
 #
-CONFIG_MODULES ?= CONFIG_UIOMEM=m
+CONFIG_UIOMEM  ?= m
 
-HOST_ARCH ?= $(shell uname -m | sed -e s/arm.*/arm/ -e s/aarch64.*/arm64/)
-ARCH      ?= $(shell uname -m | sed -e s/arm.*/arm/ -e s/aarch64.*/arm64/)
+CONFIG_OPTIONS := CONFIG_UIOMEM=$(CONFIG_UIOMEM)
+
+HOST_ARCH ?= $(shell uname -m | sed $(SUBARCH_SCRIPT))
+ARCH      ?= $(shell uname -m | sed $(SUBARCH_SCRIPT))
+
+SUBARCH_SCRIPT := -e s/i.86/x86/ -e s/x86_64/x86/ \
+		  -e s/sun4u/sparc64/ \
+		  -e s/arm.*/arm/ -e s/sa110/arm/ \
+		  -e s/s390x/s390/ \
+		  -e s/ppc.*/powerpc/ -e s/mips.*/mips/ \
+		  -e s/sh[234].*/sh/ -e s/aarch64.*/arm64/ \
+		  -e s/riscv.*/riscv/ -e s/loongarch.*/loongarch/
 
 ifeq ($(ARCH), arm)
  ifneq ($(HOST_ARCH), arm)
@@ -78,15 +89,14 @@ ifdef KERNEL_SRC
 else
   KERNEL_SRC_DIR ?= /lib/modules/$(shell uname -r)/build
 endif
-
 #
 # For out of kernel tree rules
 #
 all:
-	$(MAKE) -C $(KERNEL_SRC_DIR) ARCH=$(ARCH) CROSS_COMPILE=$(CROSS_COMPILE) M=$(PWD) $(CONFIG_MODULES) modules
+	$(MAKE) -C $(KERNEL_SRC_DIR) ARCH=$(ARCH) CROSS_COMPILE=$(CROSS_COMPILE) M=$(PWD) $(CONFIG_OPTIONS) modules
 
 modules_install:
-	$(MAKE) -C $(KERNEL_SRC_DIR) ARCH=$(ARCH) CROSS_COMPILE=$(CROSS_COMPILE) M=$(PWD) $(CONFIG_MODULES) modules_install
+	$(MAKE) -C $(KERNEL_SRC_DIR) ARCH=$(ARCH) CROSS_COMPILE=$(CROSS_COMPILE) M=$(PWD) $(CONFIG_OPTIONS) modules_install
 
 clean:
 	$(MAKE) -C $(KERNEL_SRC_DIR) ARCH=$(ARCH) CROSS_COMPILE=$(CROSS_COMPILE) M=$(PWD) clean
@@ -103,13 +113,15 @@ The maximum number of memory area that can be allocated using `insmod` is 8 (uio
 
 ```console
 shell$ sudo insmod uiomem.ko uiomem0_addr=0x0400000000 uiomem0_size=0x00040000
-[  562.657246] uiomem uiomem0: driver version = 1.1.0-alpha.4
+[  562.657246] uiomem uiomem0: driver version = 1.1.0-alpha.6
+[  562.657264] uiomem uiomem0: ioctl version  = 1
 [  562.657264] uiomem uiomem0: major number   = 238
 [  562.657270] uiomem uiomem0: minor number   = 0
 [  562.657275] uiomem uiomem0: range address  = 0x0000000400000000
 [  562.657282] uiomem uiomem0: range size     = 262144
 [  562.657282] uiomem uiomem0: cached         = 1
 [  562.657282] uiomem uiomem0: coherent       = 0
+[  562.657282] uiomem uiomem0: sync_operation = ARM64 Native
 [  562.657282] uiomem uiomem0: shareable      = 0
 [  562.657287] uiomem uiomem.0: driver installed.
 shell$ ls -la /dev/uiomem0
@@ -144,13 +156,15 @@ memory area and create device drivers when loaded by `insmod`.
 
 ```console
 shell$ sudo insmod uiomem.ko
-[  773.889476] uiomem uiomem0: driver version = 1.1.0-alpha.4
+[  773.889476] uiomem uiomem0: driver version = 1.1.0-alpha.6
+[  773.889496] uiomem uiomem0: ioctl version  = 1
 [  773.889496] uiomem uiomem0: major number   = 237
 [  773.889501] uiomem uiomem0: minor number   = 0
 [  773.889506] uiomem uiomem0: range address  = 0x0000000400000000
 [  773.889512] uiomem uiomem0: range size     = 262144
 [  773.889512] uiomem uiomem0: cached         = 1
 [  773.889512] uiomem uiomem0: coherent       = 0
+[  773.889518] uiomem uiomem0: sync_operation = ARM64 Native
 [  773.889512] uiomem uiomem0: shareable      = 0
 [  773.889518] uiomem 400000000.uiomem_plbram: driver installed.
 shell$ ls -la /dev/uiomem0
