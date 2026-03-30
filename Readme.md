@@ -7,9 +7,9 @@ See the develop branch for this project for details.
 
 https://github.com/ikwzm/uiomem/tree/develop
 
-Currently 1.0.0-alpha.7 is tentatively released.
+Currently 1.1.0-beta.1 is tentatively released.
 
-https://github.com/ikwzm/uiomem/tree/v1.0.0-alpha.7.
+https://github.com/ikwzm/uiomem/tree/v1.1.0-beta.1.
 
 # Overview
 
@@ -35,9 +35,10 @@ Some platforms allow to specify them in the device tree.
 
 ## Supported platforms
 
-* OS : Linux Kernel Version 4.19, 5.4, 6.1, 6.6, 6.12 (the author tested on 5.4 and 6.1 and 6.12).
+* OS : Linux Kernel Version 4.19, 5.4, 6.1, 6.6, 6.12 (the author tested on 5.4 and 6.1 and 6.6 and 6.12).
 * CPU: ARMv7 Cortex-A9 (Xilinx ZYNQ / Altera CycloneV SoC)
 * CPU: ARM64 Cortex-A53 (Xilinx ZYNQ UltraScale+ MPSoC)
+* CPU: RISC-V (Microchip PolarFire SoC)
 
 # Usage
 
@@ -57,10 +58,20 @@ obj-$(CONFIG_UIOMEM) += uiomem.o
 #
 # For out of kernel tree variables
 #
-CONFIG_MODULES ?= CONFIG_UIOMEM=m
+CONFIG_UIOMEM  ?= m
 
-HOST_ARCH ?= $(shell uname -m | sed -e s/arm.*/arm/ -e s/aarch64.*/arm64/)
-ARCH      ?= $(shell uname -m | sed -e s/arm.*/arm/ -e s/aarch64.*/arm64/)
+CONFIG_OPTIONS := CONFIG_UIOMEM=$(CONFIG_UIOMEM)
+
+HOST_ARCH ?= $(shell uname -m | sed $(SUBARCH_SCRIPT))
+ARCH      ?= $(shell uname -m | sed $(SUBARCH_SCRIPT))
+
+SUBARCH_SCRIPT := -e s/i.86/x86/ -e s/x86_64/x86/ \
+		  -e s/sun4u/sparc64/ \
+		  -e s/arm.*/arm/ -e s/sa110/arm/ \
+		  -e s/s390x/s390/ \
+		  -e s/ppc.*/powerpc/ -e s/mips.*/mips/ \
+		  -e s/sh[234].*/sh/ -e s/aarch64.*/arm64/ \
+		  -e s/riscv.*/riscv/ -e s/loongarch.*/loongarch/
 
 ifeq ($(ARCH), arm)
  ifneq ($(HOST_ARCH), arm)
@@ -78,15 +89,14 @@ ifdef KERNEL_SRC
 else
   KERNEL_SRC_DIR ?= /lib/modules/$(shell uname -r)/build
 endif
-
 #
 # For out of kernel tree rules
 #
 all:
-	$(MAKE) -C $(KERNEL_SRC_DIR) ARCH=$(ARCH) CROSS_COMPILE=$(CROSS_COMPILE) M=$(PWD) $(CONFIG_MODULES) modules
+	$(MAKE) -C $(KERNEL_SRC_DIR) ARCH=$(ARCH) CROSS_COMPILE=$(CROSS_COMPILE) M=$(PWD) $(CONFIG_OPTIONS) modules
 
 modules_install:
-	$(MAKE) -C $(KERNEL_SRC_DIR) ARCH=$(ARCH) CROSS_COMPILE=$(CROSS_COMPILE) M=$(PWD) $(CONFIG_MODULES) modules_install
+	$(MAKE) -C $(KERNEL_SRC_DIR) ARCH=$(ARCH) CROSS_COMPILE=$(CROSS_COMPILE) M=$(PWD) $(CONFIG_OPTIONS) modules_install
 
 clean:
 	$(MAKE) -C $(KERNEL_SRC_DIR) ARCH=$(ARCH) CROSS_COMPILE=$(CROSS_COMPILE) M=$(PWD) clean
@@ -103,11 +113,16 @@ The maximum number of memory area that can be allocated using `insmod` is 8 (uio
 
 ```console
 shell$ sudo insmod uiomem.ko uiomem0_addr=0x0400000000 uiomem0_size=0x00040000
-[  562.657246] uiomem uiomem0: driver version = 1.0.0-alpha.7
+[  562.657246] uiomem uiomem0: driver version = 1.1.0-beta.1
+[  562.657264] uiomem uiomem0: ioctl version  = 1
 [  562.657264] uiomem uiomem0: major number   = 238
 [  562.657270] uiomem uiomem0: minor number   = 0
 [  562.657275] uiomem uiomem0: range address  = 0x0000000400000000
 [  562.657282] uiomem uiomem0: range size     = 262144
+[  562.657282] uiomem uiomem0: cached         = 1
+[  562.657282] uiomem uiomem0: coherent       = 0
+[  562.657282] uiomem uiomem0: sync_operation = ARM64 Native
+[  562.657282] uiomem uiomem0: shareable      = 0
 [  562.657287] uiomem uiomem.0: driver installed.
 shell$ ls -la /dev/uiomem0
 crw------- 1 root root 238, 0 Oct 21 17:36 /dev/uiomem0
@@ -141,11 +156,16 @@ memory area and create device drivers when loaded by `insmod`.
 
 ```console
 shell$ sudo insmod uiomem.ko
-[  773.889476] uiomem uiomem0: driver version = 1.0.0-alpha.7
+[  773.889476] uiomem uiomem0: driver version = 1.1.0-beta.1
+[  773.889496] uiomem uiomem0: ioctl version  = 1
 [  773.889496] uiomem uiomem0: major number   = 237
 [  773.889501] uiomem uiomem0: minor number   = 0
 [  773.889506] uiomem uiomem0: range address  = 0x0000000400000000
 [  773.889512] uiomem uiomem0: range size     = 262144
+[  773.889512] uiomem uiomem0: cached         = 1
+[  773.889512] uiomem uiomem0: coherent       = 0
+[  773.889518] uiomem uiomem0: sync_operation = ARM64 Native
+[  773.889512] uiomem uiomem0: shareable      = 0
 [  773.889518] uiomem 400000000.uiomem_plbram: driver installed.
 shell$ ls -la /dev/uiomem0
 crw------- 1 root root 237, 0 Oct 21 17:40 /dev/uiomem0
@@ -156,6 +176,9 @@ The following properties can be set in the device tree.
   *  `compatible`
   *  `reg`
   *  `memory-region`
+  *  `cache-off`
+  *  `cache-noncoherent`
+  *  `cache-coherent`
   *  `shareable`
   *  `minor-number`
   *  `device-name`
@@ -206,6 +229,45 @@ Either the `reg` property or the `memory-region` property is required.
 			compatible = "ikwzm,uiomem";
 			memory-region = <&image_buf0>;
 		};
+```
+
+### `cache-off`
+
+The `cache-off` property specifies that uiomem is treated as non-cacheable and coherent.
+
+```devicetree:devicetree.dts
+		uiomem0 {
+			compatible = "ikwzm,uiomem";
+			reg = <0x0 0xFFFC0000 0x0 0x00040000>;
+			cache-off;
+		};
+
+```
+
+### `cache-noncoherent`
+
+The `cache-noncoherent` property specifies that uiomem is treated as cacheable but non-coherent.
+
+```devicetree:devicetree.dts
+		uiomem0 {
+			compatible = "ikwzm,uiomem";
+			reg = <0x0 0xFFFC0000 0x0 0x00040000>;
+			cache-noncoherent;
+		};
+
+```
+
+### `cache-coherent`
+
+The `cache-coherent` property specifies that uiomem is treated as cacheable and coherent.
+
+```devicetree:devicetree.dts
+		uiomem0 {
+			compatible = "ikwzm,uiomem";
+			reg = <0x0 0xFFFC0000 0x0 0x00040000>;
+			cache-coherent;
+		};
+
 ```
 
 ### `shareable`
@@ -292,7 +354,6 @@ When the `sync-direction` property is not specified, `sync-direction` is set to 
 			sync-size = <0x000F0000>;
 			sync-direction = <2>;
 		};
-
 ```
 
 ## Device file
@@ -303,6 +364,9 @@ When uiomem is loaded into the kernel, the following device files are created.
   * `/dev/<device-name>`
   * `/sys/class/uiomem/<device-name>/phys_addr`
   * `/sys/class/uiomem/<device-name>/size`
+  * `/sys/class/uiomem/<device-name>/cached`
+  * `/sys/class/uiomem/<device-name>/coherent`
+  * `/sys/class/uiomem/<device-name>/shareable`
   * `/sys/class/uiomem/<device-name>/sync_offset`
   * `/sys/class/uiomem/<device-name>/sync_size`
   * `/sys/class/uiomem/<device-name>/sync_direction`
@@ -320,7 +384,6 @@ When uiomem is loaded into the kernel, the following device files are created.
         /* Do some read/write access to buf */
         close(fd);
     }
-
 ```
 
 The device file can be directly read/written by specifying the device as the target of `dd` in the shell.
@@ -351,7 +414,6 @@ The physical address of a memory area can be retrieved by reading `/sys/class/ui
         sscanf(attr, "%x", &phys_addr);
         close(fd);
     }
-
 ```
 
 ### `size`
@@ -366,7 +428,56 @@ The size of a memory area can be retrieved by reading `/sys/class/uiomem/<device
         sscanf(attr, "%d", &buf_size);
         close(fd);
     }
+```
 
+### `cached`
+
+The device file `/sys/class/uiomem/<device-name>/cached` indicates whether `uiomem` is allocated as a cacheable region.
+
+If this value is 1, the uiomem is cacheable.
+If this value is 0, the uiomem is non-cacheable.
+
+```C:uiomem_test.c
+    unsigned char  attr[1024];
+    unsigned int   cached;
+    if ((fd  = open("/sys/class/uiomem/uiomem0/cached", O_RDONLY)) != -1) {
+        read(fd, attr, 1024);
+        sscanf(attr, "%d", &cached);
+        close(fd);
+    }
+```
+
+### `coherent`
+
+The device file `/sys/class/uiomem/<device-name>/coherent` indicates whether `uiomem` is allocated as a coherent region.
+If this value is 1, the uiomem is coherent.
+If this value is 0, the uiomem is non-coherent.
+
+If it is coherent, explicit cache synchronization is not required.
+If it is non-coherent, explicit cache synchronization is required.
+
+```C:uiomem_test.c
+    unsigned char  attr[1024];
+    unsigned int   coherent;
+    if ((fd  = open("/sys/class/uiomem/uiomem0/coherent", O_RDONLY)) != -1) {
+        read(fd, attr, 1024);
+        sscanf(attr, "%d", &coherent);
+        close(fd);
+    }
+```
+
+### `shareable`
+
+Whether the memory range of uiomem is shareable can be determined by reading `/sys/class/uiomem/<device-name>/shareable`.
+
+```C:uiomem_test.c
+    unsigned char  attr[1024];
+    unsigned int   shareable;
+    if ((fd  = open("/sys/class/uiomem/uiomem0/shareable", O_RDONLY)) != -1) {
+        read(fd, attr, 1024);
+        sscanf(attr, "%d", &shareable);
+        close(fd);
+    }
 ```
 
 ### `sync_offset`
@@ -433,7 +544,6 @@ If this value is 0, the buffer is owned by the cpu.
         sscanf(attr, "%x", &sync_owner);
         close(fd);
     }
-
 ```
 
 ### `sync_for_cpu`
