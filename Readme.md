@@ -7,9 +7,9 @@ See the develop branch for this project for details.
 
 https://github.com/ikwzm/uiomem/tree/develop
 
-Currently 1.1.0-alpha.4 is tentatively released.
+Currently 1.1.0-beta.1 is tentatively released.
 
-https://github.com/ikwzm/uiomem/tree/v1.1.0-alpha.4.
+https://github.com/ikwzm/uiomem/tree/v1.1.0-beta.1.
 
 # Overview
 
@@ -113,7 +113,7 @@ The maximum number of memory area that can be allocated using `insmod` is 8 (uio
 
 ```console
 shell$ sudo insmod uiomem.ko uiomem0_addr=0x0400000000 uiomem0_size=0x00040000
-[  562.657246] uiomem uiomem0: driver version = 1.1.0-alpha.6
+[  562.657246] uiomem uiomem0: driver version = 1.1.0-beta.1
 [  562.657264] uiomem uiomem0: ioctl version  = 1
 [  562.657264] uiomem uiomem0: major number   = 238
 [  562.657270] uiomem uiomem0: minor number   = 0
@@ -156,7 +156,7 @@ memory area and create device drivers when loaded by `insmod`.
 
 ```console
 shell$ sudo insmod uiomem.ko
-[  773.889476] uiomem uiomem0: driver version = 1.1.0-alpha.6
+[  773.889476] uiomem uiomem0: driver version = 1.1.0-beta.1
 [  773.889496] uiomem uiomem0: ioctl version  = 1
 [  773.889496] uiomem uiomem0: major number   = 237
 [  773.889501] uiomem uiomem0: minor number   = 0
