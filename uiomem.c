@@ -66,7 +66,7 @@ MODULE_DESCRIPTION("User space mappable io-memory device driver");
 MODULE_AUTHOR("ikwzm");
 MODULE_LICENSE("Dual BSD/GPL");
 
-#define DRIVER_VERSION     "1.1.0-beta.1"
+#define DRIVER_VERSION     "1.2.0-alpha.1"
 #define DRIVER_NAME        "uiomem"
 #define DEVICE_NAME_FORMAT "uiomem%d"
 #define DEVICE_MAX_NUM      256
@@ -156,6 +156,19 @@ enum uiomem_direction {
 #define SYNC_MODE_MIN           (0x01)
 #define SYNC_MODE_MAX           (0x03)
 #define SYNC_ALWAYS             (0x04)
+
+/**
+ * uiomem_range_valid() - check whether the specified range is within the uiomem
+ *                                  
+ * @this:       Pointer to the uiomem object.
+ * @offset:     Offset from the beginning of the buffer
+ * @size:       Size of the range in bytes
+ * Return:      true if the range is valid, otherwise false.
+ */
+static inline bool uiomem_range_valid(struct uiomem_object* this, u64 offset, size_t size)
+{
+    return ((offset <= this->size) && (size <= this->size - offset));
+}
 
 /**
  * DOC: Data Cache Clean/Invalid Operations using PMEM API
@@ -444,7 +457,7 @@ static int uiomem_sync_command_argments(
         sync_size      = this->sync_size;
         sync_direction = this->sync_direction;
     }
-    if (sync_offset + sync_size > this->size)
+    if (!uiomem_range_valid(this, sync_offset, sync_size))
         return -EINVAL;
     switch(sync_direction) {
         case 1 : *direction = UIOMEM_WRITE_ONLY; break;
@@ -1037,6 +1050,10 @@ static long uiomem_device_file_ioctl(struct file* file, unsigned int cmd, unsign
                 int    sync_mode      = GET_UIOMEM_IOCTL_FLAGS_SYNC_MODE(&sync_args);
                 u64    sync_offset    = (u64)(sync_args.offset);
                 size_t sync_size      = (size_t)(sync_args.size);
+                if (!uiomem_range_valid(this, sync_offset, sync_size)) {
+                    result = -EINVAL;
+                    break;
+                }
                 switch(sync_direction) {
                     case 0   : this->sync_direction = 0; break;
                     case 1   : this->sync_direction = 1; break;
