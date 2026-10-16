@@ -66,7 +66,7 @@ MODULE_DESCRIPTION("User space mappable io-memory device driver");
 MODULE_AUTHOR("ikwzm");
 MODULE_LICENSE("Dual BSD/GPL");
 
-#define DRIVER_VERSION     "1.2.0-alpha.2"
+#define DRIVER_VERSION     "1.2.0-alpha.3"
 #define DRIVER_NAME        "uiomem"
 #define DEVICE_NAME_FORMAT "uiomem%d"
 #define DEVICE_MAX_NUM      256
@@ -2233,7 +2233,7 @@ static void uiomem_cleanup(void)
     uiomem_device_list_cleanup();
     if (uiomem_platform_driver_registerd){platform_driver_unregister(&uiomem_platform_driver);}
     if (uiomem_sys_class     != NULL    ){class_destroy(uiomem_sys_class);}
-    if (uiomem_device_number != 0       ){unregister_chrdev_region(uiomem_device_number, 0);}
+    if (uiomem_device_number != 0       ){unregister_chrdev_region(uiomem_device_number, DEVICE_MAX_NUM);}
     ida_destroy(&uiomem_device_ida);
 }
 
@@ -2248,7 +2248,7 @@ static int __init uiomem_init(void)
     INIT_LIST_HEAD(&uiomem_device_list);
     mutex_init(&uiomem_device_list_sem);
 
-    retval = alloc_chrdev_region(&uiomem_device_number, 0, 0, DRIVER_NAME);
+    retval = alloc_chrdev_region(&uiomem_device_number, 0, DEVICE_MAX_NUM, DRIVER_NAME);
     if (retval != 0) {
         printk(KERN_ERR "%s: couldn't allocate device major number. return=%d\n", DRIVER_NAME, retval);
         uiomem_device_number = 0;
