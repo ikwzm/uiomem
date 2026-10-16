@@ -66,7 +66,7 @@ MODULE_DESCRIPTION("User space mappable io-memory device driver");
 MODULE_AUTHOR("ikwzm");
 MODULE_LICENSE("Dual BSD/GPL");
 
-#define DRIVER_VERSION     "1.2.0-alpha.4"
+#define DRIVER_VERSION     "1.2.0-alpha.5"
 #define DRIVER_NAME        "uiomem"
 #define DEVICE_NAME_FORMAT "uiomem%d"
 #define DEVICE_MAX_NUM      256
@@ -426,19 +426,40 @@ static inline void _uiomem_sync_for_dev(
 #define  SYNC_COMMAND_SIZE_SHIFT      (0)
 #define  SYNC_COMMAND_OFFSET_MASK     (0xFFFFFFFF00000000)
 #define  SYNC_COMMAND_OFFSET_SHIFT    (32)
-#define  SYNC_COMMAND_ARGMENT_MASK    (0xFFFFFFFFFFFFFFFE)
+#define  SYNC_COMMAND_ARGUMENT_MASK   (0xFFFFFFFFFFFFFFFE)
 /**
- * uiomem_sync_command_argments() - get argment for _uiomem_sync_for_cpu() or _uiomem_sync_for_dev()
+ * uiomem_sync_command_get_arguments() - get sync arguments from a sync command
+ *                                  
+ * @command:    Encoded sync command
+ * @offset:     Pointer to the sync range offset
+ * @size:       Pointer to the sync range size
+ * @direction:  Pointer to the sync direction
+ * Return:      true if the command contains sync arguments, otherwise false.
+ */
+static bool uiomem_sync_command_get_arguments(u64 command, u64* offset, size_t* size, int* direction)
+{
+    if ((command & SYNC_COMMAND_ARGUMENT_MASK) != 0) {
+        *offset    = (command & SYNC_COMMAND_OFFSET_MASK) >> SYNC_COMMAND_OFFSET_SHIFT;
+        *size      = (command & SYNC_COMMAND_SIZE_MASK  ) >> SYNC_COMMAND_SIZE_SHIFT  ;
+        *direction = (command & SYNC_COMMAND_DIR_MASK   ) >> SYNC_COMMAND_DIR_SHIFT   ;
+        return true;
+    } else {
+        return false;
+    }
+} 
+/**
+ * uiomem_sync_arguments() - Prepare arguments for DMA synchronization
  *                                  
  * @this:       Pointer to the uiomem object structure.
  * @command:    sync command (this->sync_for_cpu or this->sync_for_device)
- * @phys_addr:  Pointer to the phys_addr for dma_sync_single_for_...()
- * @size:       Pointer to the size for dma_sync_single_for_...()
- * @direction:  Pointer to the direction for dma_sync_single_for_...()
+ * @virt_addr:  Pointer to the virt_addr for _uiomem_sync_for_cpu()/_uiomem_sync_for_dev()
+ * @phys_addr:  Pointer to the phys_addr for _uiomem_sync_for_cpu()/_uiomem_sync_for_dev()
+ * @size:       Pointer to the size      for _uiomem_sync_for_cpu()/_uiomem_sync_for_dev()
+ * @direction:  Pointer to the direction for _uiomem_sync_for_cpu()/_uiomem_sync_for_dev()
  * Return:      Success(=0) or error status(<0).
  */
-static int uiomem_sync_command_argments(
-    struct uiomem_object *     this      ,
+static int uiomem_sync_arguments(
+    struct uiomem_object      *this      ,
     u64                        command   ,
     void*                     *virt_addr ,
     phys_addr_t               *phys_addr ,
@@ -448,11 +469,7 @@ static int uiomem_sync_command_argments(
     u64    sync_offset   ;
     size_t sync_size     ;
     int    sync_direction;
-    if ((command & SYNC_COMMAND_ARGMENT_MASK) != 0) {
-        sync_offset    = (u64   )((command & SYNC_COMMAND_OFFSET_MASK) >> SYNC_COMMAND_OFFSET_SHIFT);
-        sync_size      = (size_t)((command & SYNC_COMMAND_SIZE_MASK  ) >> SYNC_COMMAND_SIZE_SHIFT  );
-        sync_direction = (int   )((command & SYNC_COMMAND_DIR_MASK   ) >> SYNC_COMMAND_DIR_SHIFT   );
-    } else {
+    if (!uiomem_sync_command_get_arguments(command, &sync_offset, &sync_size, &sync_direction)) {
         sync_offset    = this->sync_offset;
         sync_size      = this->sync_size;
         sync_direction = this->sync_direction;
@@ -485,7 +502,7 @@ static int uiomem_sync_for_cpu(struct uiomem_object* this)
         phys_addr_t             phys_addr;
         size_t                  size;
         enum uiomem_direction   direction;
-        status = uiomem_sync_command_argments(this, command, &virt_addr, &phys_addr, &size, &direction);
+        status = uiomem_sync_arguments(this, command, &virt_addr, &phys_addr, &size, &direction);
         if (status == 0) {
             if (this->coherent == false) {
                 _uiomem_sync_for_cpu(this, virt_addr, phys_addr, size, direction);
@@ -512,7 +529,7 @@ static int uiomem_sync_for_device(struct uiomem_object* this)
         phys_addr_t             phys_addr;
         size_t                  size;
         enum uiomem_direction   direction;
-        status = uiomem_sync_command_argments(this, command, &virt_addr, &phys_addr, &size, &direction);
+        status = uiomem_sync_arguments(this, command, &virt_addr, &phys_addr, &size, &direction);
         if (status == 0) {
             if (this->coherent == false) {
                 _uiomem_sync_for_dev(this, virt_addr, phys_addr, size, direction);
