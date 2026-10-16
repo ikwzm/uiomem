@@ -66,7 +66,7 @@ MODULE_DESCRIPTION("User space mappable io-memory device driver");
 MODULE_AUTHOR("ikwzm");
 MODULE_LICENSE("Dual BSD/GPL");
 
-#define DRIVER_VERSION     "1.2.0-alpha.5"
+#define DRIVER_VERSION     "1.2.0-alpha.6"
 #define DRIVER_NAME        "uiomem"
 #define DEVICE_NAME_FORMAT "uiomem%d"
 #define DEVICE_MAX_NUM      256
@@ -1024,7 +1024,13 @@ static long uiomem_device_file_ioctl(struct file* file, unsigned int cmd, unsign
             break;
         }
         case UIOMEM_IOCTL_GET_SYNC_OWNER: {
-            uint32_t sync_owner = (uint32_t)this->sync_owner;
+            uint32_t sync_owner;
+            if (mutex_lock_interruptible(&this->sem) != 0) {
+                result = -ERESTARTSYS;
+                break;
+            }
+            sync_owner = (uint32_t)this->sync_owner;
+            mutex_unlock(&this->sem);
             if (copy_to_user(argp, &sync_owner, sizeof(sync_owner)) != 0)
                 result = -EFAULT;
             else 
@@ -1046,11 +1052,16 @@ static long uiomem_device_file_ioctl(struct file* file, unsigned int cmd, unsign
         }
         case UIOMEM_IOCTL_GET_SYNC: {
             uiomem_ioctl_sync_args sync_args = {0};
+            if (mutex_lock_interruptible(&this->sem) != 0) {
+                result = -ERESTARTSYS;
+                break;
+            }
             SET_UIOMEM_IOCTL_FLAGS_SYNC_DIR  (&sync_args, this->sync_direction);
             SET_UIOMEM_IOCTL_FLAGS_SYNC_MODE (&sync_args, this->sync_mode);
             SET_UIOMEM_IOCTL_FLAGS_SYNC_OWNER(&sync_args, this->sync_owner);
             sync_args.size   = (uint64_t)this->sync_size;
             sync_args.offset = (uint64_t)this->sync_offset;
+            mutex_unlock(&this->sem);
             if (copy_to_user(argp, &sync_args, sizeof(sync_args)) != 0)
                 result = -EFAULT;
             else 
@@ -1059,61 +1070,81 @@ static long uiomem_device_file_ioctl(struct file* file, unsigned int cmd, unsign
         }
         case UIOMEM_IOCTL_SET_SYNC: {
             uiomem_ioctl_sync_args sync_args;
-            if (copy_from_user(&sync_args, argp, sizeof(sync_args)) != 0)
+            int    sync_command;
+            int    sync_direction;
+            int    sync_mode;
+            u64    sync_offset;
+            size_t sync_size;
+            if (copy_from_user(&sync_args, argp, sizeof(sync_args)) != 0) {
                 result = -EFAULT;
-            else {
-                int    sync_command   = GET_UIOMEM_IOCTL_FLAGS_SYNC_CMD (&sync_args);
-                int    sync_direction = GET_UIOMEM_IOCTL_FLAGS_SYNC_DIR (&sync_args);
-                int    sync_mode      = GET_UIOMEM_IOCTL_FLAGS_SYNC_MODE(&sync_args);
-                u64    sync_offset    = (u64)(sync_args.offset);
-                size_t sync_size      = (size_t)(sync_args.size);
-                if (!uiomem_range_valid(this, sync_offset, sync_size)) {
-                    result = -EINVAL;
-                    break;
-                }
-                switch(sync_direction) {
-                    case 0   : this->sync_direction = 0; break;
-                    case 1   : this->sync_direction = 1; break;
-                    case 2   : this->sync_direction = 2; break;
-                    default  : /* none */                break;
-                }
-                if (sync_mode   >  0) {this->sync_mode   = sync_mode  ;}
-                if (sync_offset >= 0) {this->sync_offset = sync_offset;}
-                if (sync_size   >  0) {this->sync_size   = sync_size  ;}
-                switch(sync_command) {
-                    case UIOMEM_IOCTL_FLAGS_SYNC_CMD_FOR_CPU:
-                        this->sync_for_cpu = 1;
-                        result = uiomem_sync_for_cpu(this);
-                        break;
-                    case UIOMEM_IOCTL_FLAGS_SYNC_CMD_FOR_DEVICE:
-                        this->sync_for_device = 1;
-                        result = uiomem_sync_for_device(this);
-                        break;
-                    default  :
-                        result = 0;
-                        break;
-                }
+                break;
             }
+            sync_command   = GET_UIOMEM_IOCTL_FLAGS_SYNC_CMD (&sync_args);
+            sync_direction = GET_UIOMEM_IOCTL_FLAGS_SYNC_DIR (&sync_args);
+            sync_mode      = GET_UIOMEM_IOCTL_FLAGS_SYNC_MODE(&sync_args);
+            sync_offset    = (u64)(sync_args.offset);
+            sync_size      = (size_t)(sync_args.size);
+            if (!uiomem_range_valid(this, sync_offset, sync_size)) {
+                result = -EINVAL;
+                break;
+            }
+            if (mutex_lock_interruptible(&this->sem) != 0) {
+                result = -ERESTARTSYS;
+                break;
+            }
+            switch(sync_direction) {
+                case 0   : this->sync_direction = 0; break;
+                case 1   : this->sync_direction = 1; break;
+                case 2   : this->sync_direction = 2; break;
+                default  : /* none */                break;
+            }
+            if (sync_mode   >  0) {this->sync_mode   = sync_mode  ;}
+            if (sync_offset >= 0) {this->sync_offset = sync_offset;}
+            if (sync_size   >  0) {this->sync_size   = sync_size  ;}
+            switch(sync_command) {
+                case UIOMEM_IOCTL_FLAGS_SYNC_CMD_FOR_CPU:
+                    this->sync_for_cpu = 1;
+                    result = uiomem_sync_for_cpu(this);
+                    break;
+                case UIOMEM_IOCTL_FLAGS_SYNC_CMD_FOR_DEVICE:
+                    this->sync_for_device = 1;
+                    result = uiomem_sync_for_device(this);
+                    break;
+                default  :
+                    result = 0;
+                    break;
+            }
+            mutex_unlock(&this->sem);
             break;
         }
         case UIOMEM_IOCTL_SET_SYNC_FOR_CPU: {
             u64 sync_args;
-            if (copy_from_user(&sync_args, argp, sizeof(sync_args)) != 0)
+            if (copy_from_user(&sync_args, argp, sizeof(sync_args)) != 0) {
                 result = -EFAULT;
-            else {
-                this->sync_for_cpu = sync_args;
-                result = uiomem_sync_for_cpu(this);
+                break;
             }
+            if (mutex_lock_interruptible(&this->sem) != 0) {
+                result = -ERESTARTSYS;
+                break;
+            }
+            this->sync_for_cpu = sync_args;
+            result = uiomem_sync_for_cpu(this);
+            mutex_unlock(&this->sem);
             break;
         }
         case UIOMEM_IOCTL_SET_SYNC_FOR_DEVICE: {
             u64 sync_args;
-            if (copy_from_user(&sync_args, argp, sizeof(sync_args)) != 0)
+            if (copy_from_user(&sync_args, argp, sizeof(sync_args)) != 0) {
                 result = -EFAULT;
-            else {
-                this->sync_for_device = sync_args;
-                result = uiomem_sync_for_device(this);
+                break;
             }
+            if (mutex_lock_interruptible(&this->sem) != 0) {
+                result = -ERESTARTSYS;
+                break;
+            }
+            this->sync_for_device = sync_args;
+            result = uiomem_sync_for_device(this);
+            mutex_unlock(&this->sem);
             break;
         }
         default:
