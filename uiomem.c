@@ -66,7 +66,7 @@ MODULE_DESCRIPTION("User space mappable io-memory device driver");
 MODULE_AUTHOR("ikwzm");
 MODULE_LICENSE("Dual BSD/GPL");
 
-#define DRIVER_VERSION     "1.2.0-alpha.3"
+#define DRIVER_VERSION     "1.2.0-alpha.4"
 #define DRIVER_NAME        "uiomem"
 #define DEVICE_NAME_FORMAT "uiomem%d"
 #define DEVICE_MAX_NUM      256
@@ -1606,7 +1606,7 @@ static struct uiomem_device_entry* uiomem_device_list_create_entry(struct device
     }
     
     entry->dev = dev;
-    entry->parent = parent;
+    entry->parent = get_device(parent);
     entry->prep_remove = prep_remove;
     entry->post_remove = post_remove;
     
