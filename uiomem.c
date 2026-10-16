@@ -66,7 +66,7 @@ MODULE_DESCRIPTION("User space mappable io-memory device driver");
 MODULE_AUTHOR("ikwzm");
 MODULE_LICENSE("Dual BSD/GPL");
 
-#define DRIVER_VERSION     "1.2.0-alpha.1"
+#define DRIVER_VERSION     "1.2.0-alpha.2"
 #define DRIVER_NAME        "uiomem"
 #define DEVICE_NAME_FORMAT "uiomem%d"
 #define DEVICE_MAX_NUM      256
@@ -1151,6 +1151,10 @@ static const struct file_operations uiomem_device_file_ops = {
  */
 static DEFINE_IDA(uiomem_device_ida);
 static dev_t      uiomem_device_number = 0;
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6, 18, 0))
+#define ida_simple_get(ida, start, end, gfp) ida_alloc_range(ida, start, (end) - 1, gfp)
+#define ida_simple_remove(ida, id)           ida_free(ida, id)
+#endif
 
 /**
  * uiomem_object_create() -  Create uiomem object.
