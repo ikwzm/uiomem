@@ -66,12 +66,12 @@ MODULE_DESCRIPTION("User space mappable io-memory device driver");
 MODULE_AUTHOR("ikwzm");
 MODULE_LICENSE("Dual BSD/GPL");
 
-#define DRIVER_VERSION     "1.2.0-alpha.6"
+#define DRIVER_VERSION     "1.2.0-alpha.7"
 #define DRIVER_NAME        "uiomem"
 #define DEVICE_NAME_FORMAT "uiomem%d"
 #define DEVICE_MAX_NUM      256
 #define UIOMEM_DEBUG        1
-#define IOCTL_VERSION       1
+#define IOCTL_VERSION       2
 
 #if     (UIOMEM_DEBUG == 1)
 #define UIOMEM_DEBUG_CHECK(this,debug) (this->debug)
@@ -448,7 +448,7 @@ static bool uiomem_sync_command_get_arguments(u64 command, u64* offset, size_t* 
     }
 } 
 /**
- * uiomem_sync_arguments() - Prepare arguments for DMA synchronization
+ * uiomem_sync_arguments() - Prepare arguments for cache synchronization
  *                                  
  * @this:       Pointer to the uiomem object structure.
  * @command:    sync command (this->sync_for_cpu or this->sync_for_device)
@@ -951,6 +951,7 @@ typedef struct {
 
 DEFINE_UIOMEM_IOCTL_FLAGS(SYNC_CMD     , uiomem_ioctl_sync_args,  0,  1)
 DEFINE_UIOMEM_IOCTL_FLAGS(SYNC_DIR     , uiomem_ioctl_sync_args,  2,  3)
+DEFINE_UIOMEM_IOCTL_FLAGS(SYNC_FAST    , uiomem_ioctl_sync_args,  4,  4)
 DEFINE_UIOMEM_IOCTL_FLAGS(SYNC_MODE    , uiomem_ioctl_sync_args,  8, 15)
 DEFINE_UIOMEM_IOCTL_FLAGS(SYNC_OWNER   , uiomem_ioctl_sync_args, 16, 16)
 
@@ -1088,6 +1089,36 @@ static long uiomem_device_file_ioctl(struct file* file, unsigned int cmd, unsign
                 result = -EINVAL;
                 break;
             }
+#if (IOCTL_VERSION >= 2)
+            if (GET_UIOMEM_IOCTL_FLAGS_SYNC_FAST(&sync_args) != 0) {
+                /* Skip mutex locking and sync parameter updates for faster synchronization. */
+                void*      virt_addr = this->virt_addr + sync_offset;
+                dma_addr_t phys_addr = this->phys_addr + sync_offset;
+                enum uiomem_direction direction;
+                switch(sync_direction) {
+                    case 1 : direction = UIOMEM_WRITE_ONLY; break;
+                    case 2 : direction = UIOMEM_READ_ONLY ; break;
+                    default: direction = UIOMEM_READ_WRITE; break;
+                }
+                switch(sync_command) {
+                    case UIOMEM_IOCTL_FLAGS_SYNC_CMD_FOR_CPU:
+                        _uiomem_sync_for_cpu(this, virt_addr, phys_addr, sync_size, direction);
+                        break;
+                    case UIOMEM_IOCTL_FLAGS_SYNC_CMD_FOR_DEVICE:
+                        _uiomem_sync_for_dev(this, virt_addr, phys_addr, sync_size, direction);
+                        break;
+                    default  :
+                        break;
+                }
+                result = 0;
+                break;
+            }
+#else
+            if (GET_U_DMA_BUF_IOCTL_FLAGS_SYNC_FAST(&sync_args) != 0) {
+                result = -EINVAL;
+                break;
+            }
+#endif
             if (mutex_lock_interruptible(&this->sem) != 0) {
                 result = -ERESTARTSYS;
                 break;
