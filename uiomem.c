@@ -66,7 +66,7 @@ MODULE_DESCRIPTION("User space mappable io-memory device driver");
 MODULE_AUTHOR("ikwzm");
 MODULE_LICENSE("Dual BSD/GPL");
 
-#define DRIVER_VERSION     "1.2.1-beta.1"
+#define DRIVER_VERSION     "1.2.1-beta.2"
 #define DRIVER_NAME        "uiomem"
 #define DEVICE_NAME_FORMAT "uiomem%d"
 #define DEVICE_MAX_NUM      256
@@ -884,25 +884,8 @@ static ssize_t uiomem_device_file_write(struct file* file, const char __user* bu
 static loff_t uiomem_device_file_llseek(struct file* file, loff_t offset, int whence)
 {
     struct uiomem_object*  this = file->private_data;
-    loff_t                 new_pos;
 
-    switch (whence) {
-        case 0 : /* SEEK_SET */
-            new_pos = offset;
-            break;
-        case 1 : /* SEEK_CUR */
-            new_pos = file->f_pos + offset;
-            break;
-        case 2 : /* SEEK_END */
-            new_pos = this->size  + offset;
-            break;
-        default:
-            return -EINVAL;
-    }
-    if (new_pos < 0         ){return -EINVAL;}
-    if (new_pos > this->size){return -EINVAL;}
-    file->f_pos = new_pos;
-    return new_pos;
+    return fixed_size_llseek(file, offset, whence, this->size);
 }
 
 /**
