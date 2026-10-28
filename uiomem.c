@@ -66,7 +66,7 @@ MODULE_DESCRIPTION("User space mappable io-memory device driver");
 MODULE_AUTHOR("ikwzm");
 MODULE_LICENSE("Dual BSD/GPL");
 
-#define DRIVER_VERSION     "1.2.1-beta.3"
+#define DRIVER_VERSION     "1.2.1-beta.4"
 #define DRIVER_NAME        "uiomem"
 #define DEVICE_NAME_FORMAT "uiomem%d"
 #define DEVICE_MAX_NUM      256
@@ -158,6 +158,15 @@ enum uiomem_direction {
 #define SYNC_ALWAYS             (0x04)
 
 /**
+ * RANGE_VALID() - check whether the specified range is within limit
+ * @limit:      Upper limit of the range
+ * @offset:     Offset from the begining of the range
+ * @size:       Size of the range in bytes
+ * Return:      true if the range is valid, otherwise false.
+ */
+#define RANGE_VALID(limit, offset, size) (((offset) <= (limit)) && ((size) <= (limit) - (offset)))
+
+/**
  * uiomem_range_valid() - check whether the specified range is within the uiomem
  *                                  
  * @this:       Pointer to the uiomem object.
@@ -167,7 +176,7 @@ enum uiomem_direction {
  */
 static inline bool uiomem_range_valid(struct uiomem_object* this, u64 offset, size_t size)
 {
-    return ((offset <= this->size) && (size <= this->size - offset));
+    return RANGE_VALID(this->size, offset, size);
 }
 
 /**
@@ -730,7 +739,7 @@ static int uiomem_device_file_mmap(struct file *file, struct vm_area_struct* vma
     unsigned long         page_frame_num;
     unsigned long         map_area_size;
 
-    if (vma->vm_pgoff + vma_pages(vma) > (this->size >> PAGE_SHIFT))
+    if (!RANGE_VALID((this->size >> PAGE_SHIFT), vma->vm_pgoff, vma_pages(vma)))
         return -ENXIO;
 
     if (((file->f_flags   & O_SYNC     ) != 0    ) ||
