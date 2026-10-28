@@ -66,7 +66,7 @@ MODULE_DESCRIPTION("User space mappable io-memory device driver");
 MODULE_AUTHOR("ikwzm");
 MODULE_LICENSE("Dual BSD/GPL");
 
-#define DRIVER_VERSION     "1.2.1-beta.5"
+#define DRIVER_VERSION     "1.2.1-beta.6"
 #define DRIVER_NAME        "uiomem"
 #define DEVICE_NAME_FORMAT "uiomem%d"
 #define DEVICE_MAX_NUM      256
@@ -2000,6 +2000,10 @@ static int uiomem_platform_device_probe(struct device *dev, struct resource* res
         retval = (retval == 0) ? -EINVAL : retval;
         goto failed;
     }
+    /*
+     * mutex_lock() then dev_set_drvdata()
+     */
+    mutex_lock(&obj->sem);
     dev_set_drvdata(dev, obj);
     /*
      * shareable property
@@ -2050,7 +2054,7 @@ static int uiomem_platform_device_probe(struct device *dev, struct resource* res
         if (obj->mem_region == NULL) {
             dev_err(dev, "request_mem_region failed.\n");
             retval = -EBUSY;
-            goto failed;
+            goto failed_with_unlock;
         }
         mem_addr        = obj->mem_region->start;
         mem_size        = resource_size(obj->mem_region);
@@ -2061,7 +2065,7 @@ static int uiomem_platform_device_probe(struct device *dev, struct resource* res
     if (of_property_read_u32(dev->of_node, "sync-mode", &u32_value) == 0) {
         if ((u32_value < SYNC_MODE_MIN) || (u32_value > SYNC_MODE_MAX)) {
             dev_err(dev, "invalid sync-mode property value=%d\n", u32_value);
-            goto failed;
+            goto failed_with_unlock;
         }
         obj->sync_mode &= ~SYNC_MODE_MASK;
         obj->sync_mode |= (int)u32_value;
@@ -2078,7 +2082,7 @@ static int uiomem_platform_device_probe(struct device *dev, struct resource* res
     if (of_property_read_u32(dev->of_node, "sync-direction", &u32_value) == 0) {
         if (u32_value > DIR_MAX) {
             dev_err(dev, "invalid sync-direction property value=%d\n", u32_value);
-            goto failed;
+            goto failed_with_unlock;
         }
         obj->sync_direction = (int)u32_value;
     }
@@ -2088,7 +2092,7 @@ static int uiomem_platform_device_probe(struct device *dev, struct resource* res
     if (of_property_read_ulong(dev->of_node, "sync-offset", &u64_value) == 0) {
         if (u64_value >= mem_size) {
             dev_err(dev, "invalid sync-offset property value=%llu\n", u64_value);
-            goto failed;
+            goto failed_with_unlock;
         }
         obj->sync_offset = u64_value;
     }
@@ -2099,7 +2103,7 @@ static int uiomem_platform_device_probe(struct device *dev, struct resource* res
         if ((u64_value > SIZE_MAX) ||
             !uiomem_range_valid(obj, obj->sync_offset, u64_value)) {
             dev_err(dev, "invalid sync-size property value=%llu\n", (unsigned long long)u64_value);
-            goto failed;
+            goto failed_with_unlock;
         }
         obj->sync_size = (size_t)u64_value;
     } else {
@@ -2111,7 +2115,7 @@ static int uiomem_platform_device_probe(struct device *dev, struct resource* res
     retval = uiomem_object_setup(obj, mem_addr, mem_size);
     if (retval) {
         dev_err(dev, "driver setup failed. return=%d\n", retval);
-        goto failed;
+        goto failed_with_unlock;
     }
 
     if (info_enable) {
@@ -2120,7 +2124,9 @@ static int uiomem_platform_device_probe(struct device *dev, struct resource* res
 
     return 0;
 
-failed:
+  failed_with_unlock:
+    mutex_unlock(&obj->sem);
+  failed:
     if (obj != NULL)
         (void)uiomem_platform_device_remove(dev);
 
