@@ -66,7 +66,7 @@ MODULE_DESCRIPTION("User space mappable io-memory device driver");
 MODULE_AUTHOR("ikwzm");
 MODULE_LICENSE("Dual BSD/GPL");
 
-#define DRIVER_VERSION     "1.2.1-beta.2"
+#define DRIVER_VERSION     "1.2.1-beta.3"
 #define DRIVER_NAME        "uiomem"
 #define DEVICE_NAME_FORMAT "uiomem%d"
 #define DEVICE_MAX_NUM      256
@@ -1271,10 +1271,8 @@ static struct uiomem_object* uiomem_object_create(const char* name, struct devic
      */
     {
         this = kzalloc(sizeof(*this), GFP_KERNEL);
-        if (IS_ERR_OR_NULL(this)) {
-            int retval = PTR_ERR(this);
-            this = NULL;
-            printk(KERN_ERR "kzalloc() failed. return=%d\n", retval);
+        if (this == NULL) {
+            printk(KERN_ERR "kzalloc() failed.\n");
             goto failed;
         }
     }
@@ -1634,10 +1632,9 @@ static struct uiomem_device_entry* uiomem_device_list_create_entry(struct device
     }
 
     entry = kzalloc(sizeof(*entry), GFP_KERNEL);
-    if (IS_ERR_OR_NULL(entry)) {
-        retval = PTR_ERR(entry);
-        entry  = NULL;
-        pr_err(DRIVER_NAME ": kzalloc() failed. return=%d\n", retval);
+    if (entry == NULL) {
+        retval = -ENOMEM;
+        pr_err(DRIVER_NAME ": kzalloc() failed.\n");
         goto failed;
     }
 
