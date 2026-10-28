@@ -66,7 +66,7 @@ MODULE_DESCRIPTION("User space mappable io-memory device driver");
 MODULE_AUTHOR("ikwzm");
 MODULE_LICENSE("Dual BSD/GPL");
 
-#define DRIVER_VERSION     "1.2.1-beta.6"
+#define DRIVER_VERSION     "1.2.1-beta.7"
 #define DRIVER_NAME        "uiomem"
 #define DEVICE_NAME_FORMAT "uiomem%d"
 #define DEVICE_MAX_NUM      256
@@ -1089,18 +1089,24 @@ static long uiomem_device_file_ioctl(struct file* file, unsigned int cmd, unsign
             sync_command   = GET_UIOMEM_IOCTL_FLAGS_SYNC_CMD (&sync_args);
             sync_direction = GET_UIOMEM_IOCTL_FLAGS_SYNC_DIR (&sync_args);
             sync_mode      = GET_UIOMEM_IOCTL_FLAGS_SYNC_MODE(&sync_args);
-            sync_offset    = (u64)(sync_args.offset);
-            sync_size      = (size_t)(sync_args.size);
-            if (!uiomem_range_valid(this, sync_offset, sync_size)) {
+            if (sync_args.size > SIZE_MAX) {
                 result = -EINVAL;
                 break;
             }
 #if (IOCTL_VERSION >= 2)
             if (GET_UIOMEM_IOCTL_FLAGS_SYNC_FAST(&sync_args) != 0) {
                 /* Skip mutex locking and sync parameter updates for faster synchronization. */
-                void*      virt_addr = this->virt_addr + sync_offset;
-                dma_addr_t phys_addr = this->phys_addr + sync_offset;
+                void*      virt_addr;
+                dma_addr_t phys_addr;
                 enum uiomem_direction direction;
+                sync_offset = sync_args.offset;
+                sync_size   = (size_t)(sync_args.size);
+                if (!uiomem_range_valid(this, sync_offset, sync_size)) {
+                    result = -EINVAL;
+                    break;
+                }
+                virt_addr = this->virt_addr + sync_offset;
+                phys_addr = this->phys_addr + sync_offset;
                 switch(sync_direction) {
                     case 1 : direction = UIOMEM_WRITE_ONLY; break;
                     case 2 : direction = UIOMEM_READ_ONLY ; break;
@@ -1114,6 +1120,7 @@ static long uiomem_device_file_ioctl(struct file* file, unsigned int cmd, unsign
                         _uiomem_sync_for_dev(this, virt_addr, phys_addr, sync_size, direction);
                         break;
                     default  :
+                        /* If any other command is specified, do nothing and return success. */
                         break;
                 }
                 result = 0;
@@ -1129,27 +1136,38 @@ static long uiomem_device_file_ioctl(struct file* file, unsigned int cmd, unsign
                 result = -ERESTARTSYS;
                 break;
             }
-            switch(sync_direction) {
-                case 0   : this->sync_direction = 0; break;
-                case 1   : this->sync_direction = 1; break;
-                case 2   : this->sync_direction = 2; break;
-                default  : /* none */                break;
-            }
-            if (sync_mode   >  0) {this->sync_mode   = sync_mode  ;}
-            if (sync_offset >= 0) {this->sync_offset = sync_offset;}
-            if (sync_size   >  0) {this->sync_size   = sync_size  ;}
-            switch(sync_command) {
-                case UIOMEM_IOCTL_FLAGS_SYNC_CMD_FOR_CPU:
-                    this->sync_for_cpu = 1;
-                    result = uiomem_sync_for_cpu(this);
-                    break;
-                case UIOMEM_IOCTL_FLAGS_SYNC_CMD_FOR_DEVICE:
-                    this->sync_for_device = 1;
-                    result = uiomem_sync_for_device(this);
-                    break;
-                default  :
-                    result = 0;
-                    break;
+            sync_offset = (sync_args.offset >= 0) ? sync_args.offset : this->sync_offset;
+            sync_size   = (sync_args.size   >  0) ? sync_args.size   : this->sync_size;
+            if (!uiomem_range_valid(this, sync_offset, sync_size)) {
+                result = -EINVAL;
+            } else {
+                this->sync_offset = sync_offset;
+                this->sync_size   = sync_size;
+                switch(sync_direction) {
+                    case 0   : this->sync_direction = 0; break;
+                    case 1   : this->sync_direction = 1; break;
+                    case 2   : this->sync_direction = 2; break;
+                    default  : /* none */                break;
+                }
+                if (sync_mode > 0)
+                    this->sync_mode = sync_mode;
+                switch(sync_command) {
+                    case UIOMEM_IOCTL_FLAGS_SYNC_CMD_FOR_CPU:
+                        this->sync_for_cpu = 1;
+                        result = uiomem_sync_for_cpu(this);
+                        break;
+                    case UIOMEM_IOCTL_FLAGS_SYNC_CMD_FOR_DEVICE:
+                        this->sync_for_device = 1;
+                        result = uiomem_sync_for_device(this);
+                        break;
+                    default  :
+                       /* Commands other than those listed above only update sync_offset, 
+                        * sync_size, sync_direction, and sync_mode; no synchronization is
+                        * performed.
+                        */
+                        result = 0;
+                        break;
+                }
             }
             mutex_unlock(&this->sem);
             break;
