@@ -66,7 +66,7 @@ MODULE_DESCRIPTION("User space mappable io-memory device driver");
 MODULE_AUTHOR("ikwzm");
 MODULE_LICENSE("Dual BSD/GPL");
 
-#define DRIVER_VERSION     "1.2.0-beta.1"
+#define DRIVER_VERSION     "1.2.1-beta.1"
 #define DRIVER_NAME        "uiomem"
 #define DEVICE_NAME_FORMAT "uiomem%d"
 #define DEVICE_MAX_NUM      256
@@ -782,6 +782,10 @@ static ssize_t uiomem_device_file_read(struct file* file, char __user* buff, siz
     if (mutex_lock_interruptible(&this->sem))
         return -ERESTARTSYS;
 
+    if (*ppos < 0) {
+        result = -EINVAL;
+        goto return_unlock;
+    }
     if (*ppos >= this->size) {
         result = 0;
         goto return_unlock;
@@ -789,7 +793,10 @@ static ssize_t uiomem_device_file_read(struct file* file, char __user* buff, siz
 
     phys_addr = this->phys_addr + *ppos;
     virt_addr = this->virt_addr + *ppos;
-    xfer_size = (*ppos + count >= this->size) ? this->size - *ppos : count;
+    if (uiomem_range_valid(this, *ppos, count))
+        xfer_size = count;
+    else
+        xfer_size = this->size - *ppos;
 
     if (this->coherent == false) {
         _uiomem_sync_for_cpu(this, virt_addr, phys_addr, xfer_size, UIOMEM_READ_ONLY);
@@ -831,6 +838,10 @@ static ssize_t uiomem_device_file_write(struct file* file, const char __user* bu
     if (mutex_lock_interruptible(&this->sem))
         return -ERESTARTSYS;
 
+    if (*ppos < 0) {
+        result = -EINVAL;
+        goto return_unlock;
+    }
     if (*ppos >= this->size) {
         result = 0;
         goto return_unlock;
@@ -838,7 +849,10 @@ static ssize_t uiomem_device_file_write(struct file* file, const char __user* bu
 
     phys_addr = this->phys_addr + *ppos;
     virt_addr = this->virt_addr + *ppos;
-    xfer_size = (*ppos + count >= this->size) ? this->size - *ppos : count;
+    if (uiomem_range_valid(this, *ppos, count))
+        xfer_size = count;
+    else
+        xfer_size = this->size - *ppos;
 
     if (this->coherent == false) {
         _uiomem_sync_for_cpu(this, virt_addr, phys_addr, xfer_size, UIOMEM_WRITE_ONLY);
