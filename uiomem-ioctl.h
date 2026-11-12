@@ -34,7 +34,9 @@
 
 #define DEFINE_UIOMEM_IOCTL_FLAGS(name,type,lo,hi)                     \
 static const  int      UIOMEM_IOCTL_FLAGS_ ## name ## _SHIFT = (lo);   \
-static const  uint64_t UIOMEM_IOCTL_FLAGS_ ## name ## _MASK  = (((uint64_t)1UL << ((hi)-(lo)+1))-1); \
+static const  uint64_t UIOMEM_IOCTL_FLAGS_ ## name ## _MASK  =         \
+    (((hi)-(lo)+1) >= 64) ? ~((uint64_t)0) :                           \
+                            (((uint64_t)1 << ((hi)-(lo)+1)) - 1);      \
 static inline void SET_UIOMEM_IOCTL_FLAGS_ ## name(type *p, int value) \
 {                                                                      \
     const int      shift = UIOMEM_IOCTL_FLAGS_ ## name ## _SHIFT;      \

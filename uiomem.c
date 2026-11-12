@@ -66,7 +66,7 @@ MODULE_DESCRIPTION("User space mappable io-memory device driver");
 MODULE_AUTHOR("ikwzm");
 MODULE_LICENSE("Dual BSD/GPL");
 
-#define DRIVER_VERSION     "1.3.0-alpha.8"
+#define DRIVER_VERSION     "1.3.0-alpha.9"
 #define DRIVER_NAME        "uiomem"
 #define DEVICE_NAME_FORMAT "uiomem%d"
 #define DEVICE_MAX_NUM      256
@@ -929,7 +929,9 @@ static loff_t uiomem_device_file_llseek(struct file* file, loff_t offset, int wh
 
 #define DEFINE_UIOMEM_IOCTL_FLAGS(name,type,lo,hi)                     \
 static const  int      UIOMEM_IOCTL_FLAGS_ ## name ## _SHIFT = (lo);   \
-static const  uint64_t UIOMEM_IOCTL_FLAGS_ ## name ## _MASK  = (((uint64_t)1UL << ((hi)-(lo)+1))-1); \
+static const  uint64_t UIOMEM_IOCTL_FLAGS_ ## name ## _MASK  =         \
+    (((hi)-(lo)+1) >= 64) ? ~((uint64_t)0) :                           \
+                            (((uint64_t)1 << ((hi)-(lo)+1)) - 1);      \
 static inline void SET_UIOMEM_IOCTL_FLAGS_ ## name(type *p, int value) \
 {                                                                      \
     const int      shift = UIOMEM_IOCTL_FLAGS_ ## name ## _SHIFT;      \
