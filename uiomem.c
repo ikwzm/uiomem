@@ -66,7 +66,7 @@ MODULE_DESCRIPTION("User space mappable io-memory device driver");
 MODULE_AUTHOR("ikwzm");
 MODULE_LICENSE("Dual BSD/GPL");
 
-#define DRIVER_VERSION     "1.3.0-alpha.3"
+#define DRIVER_VERSION     "1.3.0-alpha.4"
 #define DRIVER_NAME        "uiomem"
 #define DEVICE_NAME_FORMAT "uiomem%d"
 #define DEVICE_MAX_NUM      256
@@ -1688,6 +1688,8 @@ static struct uiomem_device_entry* uiomem_device_list_search(struct device *dev,
 {
     struct uiomem_device_entry* entry;
     struct uiomem_device_entry* found_entry = NULL;
+    if ((dev == NULL) && (name == NULL) && (id < 0))
+        return NULL;
     mutex_lock(&uiomem_device_list_sem);
     list_for_each_entry(entry, &uiomem_device_list, list) {
         bool found_by_dev  = true;
