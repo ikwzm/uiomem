@@ -66,7 +66,7 @@ MODULE_DESCRIPTION("User space mappable io-memory device driver");
 MODULE_AUTHOR("ikwzm");
 MODULE_LICENSE("Dual BSD/GPL");
 
-#define DRIVER_VERSION     "1.3.0-alpha.2"
+#define DRIVER_VERSION     "1.3.0-alpha.3"
 #define DRIVER_NAME        "uiomem"
 #define DEVICE_NAME_FORMAT "uiomem%d"
 #define DEVICE_MAX_NUM      256
@@ -2348,7 +2348,9 @@ static int uiomem_platform_driver_probe(struct platform_device *pdev)
 
     retval = uiomem_platform_device_probe(&pdev->dev, res);
     
-    if (info_enable && (retval == 0)) {
+    if (retval != 0) {
+        dev_err(&pdev->dev, "driver probe failed. return=%d\n", retval);
+    } else if (info_enable) {
         dev_info(&pdev->dev, "driver installed.\n");
     }
     return retval;
@@ -2368,7 +2370,9 @@ static int _uiomem_platform_driver_remove(struct platform_device *pdev)
 
     retval = uiomem_platform_device_remove(&pdev->dev);
 
-    if (info_enable) {
+    if (retval != 0) {
+        dev_err(&pdev->dev, "driver remove failed. return=%d\n", retval);
+    } else if (info_enable) {
         dev_info(&pdev->dev, "driver removed.\n");
     }
     return retval;
