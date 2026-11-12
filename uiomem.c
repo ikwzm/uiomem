@@ -66,7 +66,7 @@ MODULE_DESCRIPTION("User space mappable io-memory device driver");
 MODULE_AUTHOR("ikwzm");
 MODULE_LICENSE("Dual BSD/GPL");
 
-#define DRIVER_VERSION     "1.3.0-alpha.5"
+#define DRIVER_VERSION     "1.3.0-alpha.6"
 #define DRIVER_NAME        "uiomem"
 #define DEVICE_NAME_FORMAT "uiomem%d"
 #define DEVICE_MAX_NUM      256
@@ -1602,7 +1602,7 @@ struct uiomem_device_entry {
  * uiomem_device_list_sem    - semaphore of uiomem platform device list.
  */
 static struct list_head uiomem_device_list;
-static struct mutex     uiomem_device_list_sem;
+static DEFINE_MUTEX(    uiomem_device_list_sem);
 
 /**
  * uiomem_get_device_name_property()  - Get "device-name"  property from uiomem device.
@@ -1801,6 +1801,7 @@ static struct uiomem_device_entry* uiomem_device_list_create_entry(struct device
     entry->parent = get_device(parent);
     entry->prep_remove = prep_remove;
     entry->post_remove = post_remove;
+    INIT_LIST_HEAD(&entry->list);
     
     mutex_lock(&uiomem_device_list_sem);
     list_add_tail(&entry->list, &uiomem_device_list);
@@ -1822,7 +1823,8 @@ static struct uiomem_device_entry* uiomem_device_list_create_entry(struct device
 static void uiomem_device_list_delete_entry(struct uiomem_device_entry* entry)
 {
     mutex_lock(&uiomem_device_list_sem);
-    list_del(&entry->list);
+    if (!list_empty(&entry->list))
+        list_del_init(&entry->list);
     mutex_unlock(&uiomem_device_list_sem);
     kfree(entry);
 }
@@ -2460,7 +2462,6 @@ static int __init uiomem_init(void)
 
     ida_init(&uiomem_device_ida);
     INIT_LIST_HEAD(&uiomem_device_list);
-    mutex_init(&uiomem_device_list_sem);
 
     retval = alloc_chrdev_region(&uiomem_device_number, 0, DEVICE_MAX_NUM, DRIVER_NAME);
     if (retval != 0) {
