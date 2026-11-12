@@ -66,7 +66,7 @@ MODULE_DESCRIPTION("User space mappable io-memory device driver");
 MODULE_AUTHOR("ikwzm");
 MODULE_LICENSE("Dual BSD/GPL");
 
-#define DRIVER_VERSION     "1.3.0-alpha.9"
+#define DRIVER_VERSION     "1.3.0-alpha.10"
 #define DRIVER_NAME        "uiomem"
 #define DEVICE_NAME_FORMAT "uiomem%d"
 #define DEVICE_MAX_NUM      256
@@ -2224,7 +2224,7 @@ static int uiomem_platform_device_probe(struct device *dev, struct resource* res
      */
     if (of_property_read_ulong(dev->of_node, "sync-size", &u64_value) == 0) {
         if ((u64_value > SIZE_MAX) ||
-            !uiomem_range_valid(obj, obj->sync_offset, u64_value)) {
+            !RANGE_VALID(mem_size, obj->sync_offset, u64_value)) {
             dev_err(dev, "invalid sync-size property value=%llu\n", (unsigned long long)u64_value);
             retval = -EINVAL;
             goto failed;
@@ -2233,7 +2233,7 @@ static int uiomem_platform_device_probe(struct device *dev, struct resource* res
     } else {
         obj->sync_size = (size_t)(mem_size - obj->sync_offset);
     }
-    if (!uiomem_range_valid(obj, obj->sync_offset, obj->sync_size)) {
+    if (!RANGE_VALID(mem_size, obj->sync_offset, obj->sync_size)) {
         dev_err(dev, "invalid sync range property (sync-offset=%llu, sync-size=%llu)\n",
                 (unsigned long long)obj->sync_offset,
                 (unsigned long long)obj->sync_size);
