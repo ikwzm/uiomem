@@ -66,7 +66,7 @@ MODULE_DESCRIPTION("User space mappable io-memory device driver");
 MODULE_AUTHOR("ikwzm");
 MODULE_LICENSE("Dual BSD/GPL");
 
-#define DRIVER_VERSION     "1.3.0-alpha.1"
+#define DRIVER_VERSION     "1.3.0-alpha.2"
 #define DRIVER_NAME        "uiomem"
 #define DEVICE_NAME_FORMAT "uiomem%d"
 #define DEVICE_MAX_NUM      256
@@ -1310,16 +1310,16 @@ static struct uiomem_object* uiomem_object_create(const char* name, struct devic
     {
         if ((0 <= minor) && (minor < DEVICE_MAX_NUM)) {
             if (ida_simple_get(&uiomem_device_ida, minor, minor+1, GFP_KERNEL) < 0) {
-                printk(KERN_ERR "couldn't allocate minor number(=%d).\n", minor);
+                pr_err(DRIVER_NAME ": couldn't allocate minor number(=%d).\n", minor);
                 goto failed;
             }
         } else if(minor < 0) {
             if ((minor = ida_simple_get(&uiomem_device_ida, 0, DEVICE_MAX_NUM, GFP_KERNEL)) < 0) {
-                printk(KERN_ERR "couldn't allocate new minor number. return=%d.\n", minor);
+                pr_err(DRIVER_NAME ": couldn't allocate new minor number. return=%d.\n", minor);
                 goto failed;
             }
         } else {
-                printk(KERN_ERR "invalid minor number(=%d), valid range is 0 to %d\n", minor, DEVICE_MAX_NUM-1);
+                pr_err(DRIVER_NAME ": invalid minor number(=%d), valid range is 0 to %d\n", minor, DEVICE_MAX_NUM-1);
                 goto failed;
         }
         done |= DONE_ALLOC_MINOR;
@@ -1330,7 +1330,7 @@ static struct uiomem_object* uiomem_object_create(const char* name, struct devic
     {
         this = kzalloc(sizeof(*this), GFP_KERNEL);
         if (this == NULL) {
-            printk(KERN_ERR "kzalloc() failed.\n");
+            pr_err(DRIVER_NAME ": kzalloc() failed.\n");
             goto failed;
         }
     }
@@ -1368,7 +1368,7 @@ static struct uiomem_object* uiomem_object_create(const char* name, struct devic
         else
             retval = dev_set_name(this->sys_dev, "%s", name);
         if (retval) {
-            printk(KERN_ERR "dev_set_name() failed. return=%d\n", retval);
+            pr_err(DRIVER_NAME ": dev_set_name() failed. return=%d\n", retval);
             goto failed;
         }
     }
@@ -2456,7 +2456,7 @@ static int __init uiomem_init(void)
 
     retval = alloc_chrdev_region(&uiomem_device_number, 0, DEVICE_MAX_NUM, DRIVER_NAME);
     if (retval != 0) {
-        printk(KERN_ERR "%s: couldn't allocate device major number. return=%d\n", DRIVER_NAME, retval);
+        pr_err(DRIVER_NAME ": couldn't allocate device major number. return=%d\n", retval);
         uiomem_device_number = 0;
         goto failed;
     }
@@ -2469,7 +2469,7 @@ static int __init uiomem_init(void)
     if (IS_ERR_OR_NULL(uiomem_sys_class)) {
         retval = PTR_ERR(uiomem_sys_class);
         uiomem_sys_class = NULL;
-        printk(KERN_ERR "%s: couldn't create sys class. return=%d\n", DRIVER_NAME, retval);
+        pr_err(DRIVER_NAME ": couldn't create sys class. return=%d\n", retval);
         retval = (retval == 0) ? -ENOMEM : retval;
         goto failed;
     }
@@ -2480,7 +2480,7 @@ static int __init uiomem_init(void)
 
     retval = platform_driver_register(&uiomem_platform_driver);
     if (retval) {
-        printk(KERN_ERR "%s: couldn't register platform driver. return=%d\n", DRIVER_NAME, retval);
+        pr_err(DRIVER_NAME ": couldn't register platform driver. return=%d\n", retval);
         uiomem_platform_driver_registerd = false;
         goto failed;
     } else {
