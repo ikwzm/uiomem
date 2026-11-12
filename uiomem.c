@@ -66,7 +66,7 @@ MODULE_DESCRIPTION("User space mappable io-memory device driver");
 MODULE_AUTHOR("ikwzm");
 MODULE_LICENSE("Dual BSD/GPL");
 
-#define DRIVER_VERSION     "1.3.0-alpha.6"
+#define DRIVER_VERSION     "1.3.0-alpha.7"
 #define DRIVER_NAME        "uiomem"
 #define DEVICE_NAME_FORMAT "uiomem%d"
 #define DEVICE_MAX_NUM      256
@@ -2230,6 +2230,13 @@ static int uiomem_platform_device_probe(struct device *dev, struct resource* res
         obj->sync_size = (size_t)u64_value;
     } else {
         obj->sync_size = (size_t)(mem_size - obj->sync_offset);
+    }
+    if (!uiomem_range_valid(obj, obj->sync_offset, obj->sync_size)) {
+        dev_err(dev, "invalid sync range property (sync-offset=%llu, sync-size=%llu)\n",
+                (unsigned long long)obj->sync_offset,
+                (unsigned long long)obj->sync_size);
+        retval = -EINVAL;
+        goto failed;
     }
     /*
      * uiomem_object_setup()
