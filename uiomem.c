@@ -66,7 +66,7 @@ MODULE_DESCRIPTION("User space mappable io-memory device driver");
 MODULE_AUTHOR("ikwzm");
 MODULE_LICENSE("Dual BSD/GPL");
 
-#define DRIVER_VERSION     "1.3.0-alpha.4"
+#define DRIVER_VERSION     "1.3.0-alpha.5"
 #define DRIVER_NAME        "uiomem"
 #define DEVICE_NAME_FORMAT "uiomem%d"
 #define DEVICE_MAX_NUM      256
@@ -1737,15 +1737,17 @@ static struct uiomem_device_entry* uiomem_device_list_search(struct device *dev,
  */
 static struct uiomem_device_entry* uiomem_device_list_create_entry(struct device *dev, struct device *parent, const char* name, int id, u64 addr, u64 size, u64 option, void (*prep_remove)(struct device*), void (*post_remove)(struct device*))
 {                              
-    struct uiomem_device_entry* exist_entry;
     struct uiomem_device_entry* entry  = NULL;
     int                         retval = 0;
     
-    exist_entry = uiomem_device_list_search(NULL, name, id);
-    if (!IS_ERR_OR_NULL(exist_entry)) {
-        pr_err(DRIVER_NAME ": device name(%s) or id(%d) is already exists\n", (name)?name:"NULL", id);
-        retval = -EINVAL;
-        goto failed;
+    if ((name != NULL) || (id >= 0)) {
+        struct uiomem_device_entry* exist_entry;
+        exist_entry = uiomem_device_list_search(NULL, name, id);
+        if (!IS_ERR_OR_NULL(exist_entry)) {
+            pr_err(DRIVER_NAME ": device name(%s) or id(%d) is already exists\n", (name)?name:"NULL", id);
+            retval = -EINVAL;
+            goto failed;
+        }
     }
 
     entry = kzalloc(sizeof(*entry), GFP_KERNEL);
