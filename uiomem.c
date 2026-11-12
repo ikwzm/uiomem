@@ -66,7 +66,7 @@ MODULE_DESCRIPTION("User space mappable io-memory device driver");
 MODULE_AUTHOR("ikwzm");
 MODULE_LICENSE("Dual BSD/GPL");
 
-#define DRIVER_VERSION     "1.3.0-alpha.7"
+#define DRIVER_VERSION     "1.3.0-alpha.8"
 #define DRIVER_NAME        "uiomem"
 #define DEVICE_NAME_FORMAT "uiomem%d"
 #define DEVICE_MAX_NUM      256
@@ -1900,23 +1900,23 @@ static void uiomem_platform_device_put(struct device* dev)
  * @addr:       iomem address.
  * @size:       iomem size.
  * @option      option.
- * Return:      Success(=0) or error status(<0).
+ * Return:      pointer to struct device* dev(>=0) or error status(<0).
  */
-static int uiomem_platform_device_create(const char* name, int id, u64 addr, u64 size, u64 option)
+static struct device* uiomem_platform_device_create(const char* name, int id, u64 addr, u64 size, u64 option)
 {
     struct platform_device*     pdev   = NULL;
     struct uiomem_device_entry* entry  = NULL;
     int                         retval = 0;
 
     if (addr == 0)
-        return -EINVAL;
+        return ERR_PTR(-EINVAL);
 
     if (size == 0)
-        return -EINVAL;
+        return ERR_PTR(-EINVAL);
 
     pdev = platform_device_alloc(DRIVER_NAME, id);
     if (IS_ERR_OR_NULL(pdev)) {
-        retval = PTR_ERR(pdev);
+        retval = (pdev == NULL) ? -ENOMEM : PTR_ERR(pdev);
         pdev   = NULL;
         pr_err(DRIVER_NAME ": platform_device_alloc(%s,%d) failed. return=%d\n", DRIVER_NAME, id, retval);
         goto failed;
@@ -1963,7 +1963,7 @@ static int uiomem_platform_device_create(const char* name, int id, u64 addr, u64
         goto failed;
     }
     
-    return 0;
+    return &pdev->dev;
 
  failed:
     if (entry != NULL) {
@@ -1972,7 +1972,7 @@ static int uiomem_platform_device_create(const char* name, int id, u64 addr, u64
     if (pdev  != NULL) {
         platform_device_put(pdev);
     }
-    return retval;
+    return ERR_PTR(retval);
 }
 
 /**
@@ -2284,8 +2284,17 @@ static int uiomem_platform_device_probe(struct device *dev, struct resource* res
 
 #define CALL_UIOMEM_STATIC_DEVICE_CREATE(__num)                         \
     if (uiomem ## __num ## _size != 0) {                                \
+        int retval;                                                     \
         ida_simple_remove(&uiomem_device_ida, __num);                   \
-        uiomem_platform_device_create(NULL, __num, uiomem ## __num ## _addr, uiomem ## __num ## _size, uiomem ## __num ## _option); \
+        retval = uiomem_static_device_create(                           \
+                     NULL                        , /* name   */         \
+                     __num                       , /* id     */         \
+                     uiomem ## __num ## _addr    , /* addr   */         \
+                     uiomem ## __num ## _size    , /* size   */         \
+                     uiomem ## __num ## _option    /* option */         \
+                 );                                                     \
+        if (retval)                                                     \
+            status = retval;                                            \
     }
 
 #define CALL_UIOMEM_STATIC_DEVICE_RESERVE_MINOR_NUMBER(__num)           \
@@ -2301,6 +2310,27 @@ DEFINE_UIOMEM_STATIC_DEVICE_PARAM(4);
 DEFINE_UIOMEM_STATIC_DEVICE_PARAM(5);
 DEFINE_UIOMEM_STATIC_DEVICE_PARAM(6);
 DEFINE_UIOMEM_STATIC_DEVICE_PARAM(7);
+
+/**
+ * uiomem_static_device_create() - Create uiomem static device and add to list.
+ * @name:       device name or NULL.
+ * @id:         device id.
+ * @addr:       iomem address.
+ * @size:       iomem size.
+ * @option      option.
+ * Return:      Success(=0) or error status(<0).
+ */
+static int uiomem_static_device_create(const char* name, int id, u64 addr, u64 size, u64 option)
+{
+    struct device* dev;
+    int            retval = 0;
+
+    dev = uiomem_platform_device_create(name, id, addr, size, option);
+    if (IS_ERR_OR_NULL(dev)) {
+        retval = (dev == NULL)? -EINVAL : PTR_ERR(dev);
+    }
+    return retval;
+}
 
 /**
  * uiomem_static_device_reserve_minor_number_all() - Reserve uiomem static device's minor-number.
@@ -2320,8 +2350,9 @@ static void uiomem_static_device_reserve_minor_number_all(void)
 /**
  * uiomem_static_device_create_all() - Create uiomem static devices.
  */
-static void uiomem_static_device_create_all(void)
+static int  uiomem_static_device_create_all(void)
 {
+    int  status = 0;
     CALL_UIOMEM_STATIC_DEVICE_CREATE(0);
     CALL_UIOMEM_STATIC_DEVICE_CREATE(1);
     CALL_UIOMEM_STATIC_DEVICE_CREATE(2);
@@ -2330,6 +2361,7 @@ static void uiomem_static_device_create_all(void)
     CALL_UIOMEM_STATIC_DEVICE_CREATE(5);
     CALL_UIOMEM_STATIC_DEVICE_CREATE(6);
     CALL_UIOMEM_STATIC_DEVICE_CREATE(7);
+    return status;
 }
 
 /**
@@ -2503,7 +2535,11 @@ static int __init uiomem_init(void)
         uiomem_platform_driver_registerd = true;
     }
 
-    uiomem_static_device_create_all();
+    retval = uiomem_static_device_create_all();
+    if (retval) {
+        pr_err(DRIVER_NAME ": couldn't create static devices. return=%d\n", retval);
+        goto failed;
+    } 
 
     return 0;
 
