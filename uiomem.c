@@ -66,7 +66,7 @@ MODULE_DESCRIPTION("User space mappable io-memory device driver");
 MODULE_AUTHOR("ikwzm");
 MODULE_LICENSE("Dual BSD/GPL");
 
-#define DRIVER_VERSION     "1.2.2-beta.1"
+#define DRIVER_VERSION     "1.3.0-alpha.1"
 #define DRIVER_NAME        "uiomem"
 #define DEVICE_NAME_FORMAT "uiomem%d"
 #define DEVICE_MAX_NUM      256
@@ -115,9 +115,11 @@ MODULE_PARM_DESC( info_enable , "uiomem install/uninstall infomation enable");
 struct uiomem_object {
     struct device*       sys_dev;
     struct cdev          cdev;
+    struct device        dev;
     dev_t                device_number;
     struct mutex         sem;
-    bool                 is_open;
+    struct mutex         status_lock;
+    int                  status;
     size_t               size;
     void*                virt_addr;
     phys_addr_t          phys_addr;
@@ -146,6 +148,13 @@ enum uiomem_direction {
 #define DIR_MAX UIOMEM_READ_ONLY
 
 /**
+ * uiomem_object status value
+ */
+#define UIOMEM_OBJECT_INITIAL   (0)
+#define UIOMEM_OBJECT_ALIVE     (1)
+#define UIOMEM_OBJECT_DEAD      (2)
+
+/**
  * sync_mode(synchronous mode) value
  */
 #define SYNC_MODE_INVALID       (0x00)
@@ -156,6 +165,9 @@ enum uiomem_direction {
 #define SYNC_MODE_MIN           (0x01)
 #define SYNC_MODE_MAX           (0x03)
 #define SYNC_ALWAYS             (0x04)
+
+static int  uiomem_object_get(struct uiomem_object* this);
+static void uiomem_object_put(struct uiomem_object* this);
 
 /**
  * RANGE_VALID() - check whether the specified range is within limit
@@ -680,9 +692,10 @@ static int uiomem_device_file_open(struct inode *inode, struct file *file)
     int status = 0;
 
     this = container_of(inode->i_cdev, struct uiomem_object, cdev);
-    file->private_data = this;
-    this->is_open = 1;
-
+    status = uiomem_object_get(this);
+    if (status == 0) {
+        file->private_data = this;
+    }
     return status;
 }
 
@@ -696,7 +709,7 @@ static int uiomem_device_file_release(struct inode *inode, struct file *file)
 {
     struct uiomem_object* this = file->private_data;
 
-    this->is_open = 0;
+    uiomem_object_put(this);
 
     return 0;
 }
@@ -1260,19 +1273,37 @@ static dev_t      uiomem_device_number = 0;
 #endif
 
 /**
- * uiomem_object_create() -  Create uiomem object.
- * @name:       device name   or NULL.
- * @parent:     parent device or NULL.
- * @minor:      minor_number  or -1 or -2.
- * Return:      Pointer to the uiomem object or NULL.
+ * uiomem_object_device_release() - Release a uiomem device
+ * @dev:        Pointer to the device structure.
+ *
+ * This function is called as the release callback of the
+ * uiomem device when its reference count reaches zero.
+ *
+ * Retrieve the containing uiomem object from @dev and
+ * release it by calling uiomem_object_release().
+ */
+static void uiomem_object_release(struct uiomem_object* this);
+static void uiomem_object_device_release(struct device* dev)
+{
+    struct uiomem_object* this = container_of(dev, struct uiomem_object, dev);
+    uiomem_object_release(this);
+}
+
+/**
+ * uiomem_object_create() - Create a uiomem object.
+ * @name:       Device Name   or NULL to use the default name.
+ * @parent:     Parent device or NULL if there is no parent device.
+ * @minor:      Minor number to use (0 to DEVICE_MAX_NUM - 1),
+ *              or a negative value to allocate one automatically.
+ * Return:      Pointer to the initialized uiomem object on success,
+ *              or NULL on failure.
  */
 static struct uiomem_object* uiomem_object_create(const char* name, struct device* parent, int minor)
 {
-    struct uiomem_object* this     = NULL;
-    unsigned int               done     = 0;
-    const unsigned int         DONE_ALLOC_MINOR   = (1 << 0);
-    const unsigned int         DONE_CHRDEV_ADD    = (1 << 1);
-    const unsigned int         DONE_DEVICE_CREATE = (1 << 3);
+    struct uiomem_object*  this     = NULL;
+    unsigned int           done     = 0;
+    const unsigned int     DONE_ALLOC_MINOR = (1 << 0);
+    const unsigned int     DONE_DEVICE_INIT = (1 << 1);
     /*
      * allocate device minor number
      */
@@ -1310,42 +1341,36 @@ static struct uiomem_object* uiomem_object_create(const char* name, struct devic
         this->device_number = MKDEV(MAJOR(uiomem_device_number), minor);
     }
     /*
-     * register /sys/class/uiomem/<name>
+     * Initialize locks before registering the device with cdev_device_add()
+     * to prevent concurrent access during device initialization.
      */
     {
-        if (name == NULL) {
-            this->sys_dev = device_create(uiomem_sys_class,
-                                          parent,
-                                          this->device_number,
-                                          (void *)this,
-                                          DEVICE_NAME_FORMAT, MINOR(this->device_number));
-        } else {
-            this->sys_dev = device_create(uiomem_sys_class,
-                                          parent,
-                                          this->device_number,
-                                          (void *)this,
-                                         "%s", name);
-        }
-        if (IS_ERR_OR_NULL(this->sys_dev)) {
-            int retval = PTR_ERR(this->sys_dev);
-            this->sys_dev = NULL;
-            printk(KERN_ERR "device_create() failed. return=%d\n", retval);
-            goto failed;
-        }
-        done |= DONE_DEVICE_CREATE;
+        mutex_init(&this->sem);
+        mutex_init(&this->status_lock);
+        this->status = UIOMEM_OBJECT_INITIAL;
     }
     /*
-     * add chrdev.
+     * dev initialize and set sys_dev
      */
     {
         int retval;
-        cdev_init(&this->cdev, &uiomem_device_file_ops);
-        this->cdev.owner = THIS_MODULE;
-        if ((retval = cdev_add(&this->cdev, this->device_number, 1)) != 0) {
-            printk(KERN_ERR "cdev_add() failed. return=%d\n", retval);
+        device_initialize(&this->dev);
+        this->dev.release = uiomem_object_device_release;
+        this->dev.parent  = parent;
+        this->dev.class   = uiomem_sys_class;
+        this->dev.devt    = this->device_number;
+        this->sys_dev     = &this->dev;
+        dev_set_drvdata(this->sys_dev, this);
+        done |= DONE_DEVICE_INIT;
+
+        if (name == NULL) 
+            retval = dev_set_name(this->sys_dev, DEVICE_NAME_FORMAT, MINOR(this->device_number));
+        else
+            retval = dev_set_name(this->sys_dev, "%s", name);
+        if (retval) {
+            printk(KERN_ERR "dev_set_name() failed. return=%d\n", retval);
             goto failed;
         }
-        done |= DONE_CHRDEV_ADD;
     }
     /*
      * initialize other variables.
@@ -1361,24 +1386,27 @@ static struct uiomem_object* uiomem_object_create(const char* name, struct devic
         this->sync_for_device = 0;
         this->mem_region      = NULL;
     }
-    mutex_init(&this->sem);
 
     return this;
 
  failed:
-    if (done & DONE_CHRDEV_ADD   ) { cdev_del(&this->cdev); }
-    if (done & DONE_DEVICE_CREATE) { device_destroy(uiomem_sys_class, this->device_number);}
-    if (done & DONE_ALLOC_MINOR  ) { ida_simple_remove(&uiomem_device_ida, minor);}
-    if (this != NULL)              { kfree(this); }
+    if (done & DONE_DEVICE_INIT) {
+        put_device(this->sys_dev);
+        return NULL;
+    }
+    if (done & DONE_ALLOC_MINOR)
+        ida_simple_remove(&uiomem_device_ida, minor);
+    if (this != NULL)
+        kfree(this);
     return NULL;
 }
 
 /**
- * uiomem_object_setup() - Setup the uiomem object.
- * @this:       Pointer to the uiomem object.
+ * uiomem_object_setup() - Set up and register a uiomem object.
+ * @this:       Pointer to the udmabuf object.
  * @phys_addr:  Physical address.
  * @size:       size.
- * Return:      Success(=0) or error status(<0).
+ * Return:      0 on success, or a negative error code on failure.
  */
 static int uiomem_object_setup(struct uiomem_object* this, phys_addr_t phys_addr, size_t size)
 {
@@ -1405,7 +1433,21 @@ static int uiomem_object_setup(struct uiomem_object* this, phys_addr_t phys_addr
         this->virt_addr = NULL;
         return (retval == 0) ? -ENOMEM : retval;
     }
-    return 0;
+    {
+        int retval = 0;
+        cdev_init(&this->cdev, &uiomem_device_file_ops);
+        this->cdev.owner = THIS_MODULE;
+        mutex_lock(&this->status_lock);
+        mutex_lock(&this->sem);
+        retval = cdev_device_add(&this->cdev, this->sys_dev);
+        if (retval == 0)
+            this->status = UIOMEM_OBJECT_ALIVE;
+        mutex_unlock(&this->sem);
+        mutex_unlock(&this->status_lock);
+        if (retval != 0) 
+            dev_err(this->sys_dev, "cdev_device_add() failed. return=%d\n", retval);
+        return retval;
+    }
 }
 
 /**
@@ -1433,17 +1475,16 @@ static void uiomem_object_info(struct uiomem_object* this)
 }
 
 /**
- * uiomem_object_destroy() -  Destroy the uiomem object.
+ * uiomem_object_release() - Release a uiomem object.
  * @this:       Pointer to the uiomem object.
- * Return:      Success(=0) or error status(<0).
  *
- * Unregister the device after releasing the resources.
+ * Release the resources associated with the uiomem object.
+ *
+ * This function is called as the release callback of the object's
+ * struct device when its reference count reaches zero.
  */
-static int uiomem_object_destroy(struct uiomem_object* this)
+static void uiomem_object_release(struct uiomem_object* this)
 {
-    if (!this)
-        return -ENODEV;
-
     if (this->virt_addr != NULL) {
         memunmap(this->virt_addr);
         this->virt_addr = NULL;
@@ -1451,31 +1492,78 @@ static int uiomem_object_destroy(struct uiomem_object* this)
     if (this->mem_region != NULL) {
         release_mem_region(this->mem_region->start, resource_size(this->mem_region));
     }
-    cdev_del(&this->cdev);
-    device_destroy(uiomem_sys_class, this->device_number);
     ida_simple_remove(&uiomem_device_ida, MINOR(this->device_number));
     kfree(this);
+}
+
+/**
+ * uiomem_object_destroy() - Destroy a uiomem object.
+ * @this:       Pointer to the uiomem object.
+ * Return:      0 on success, -EBUSY if exported DMA-BUFs remain,
+ *              -ENODEV if @this is NULL, or a negative error code
+ *              if applicable.
+ */
+static int uiomem_object_destroy(struct uiomem_object* this)
+{
+    int curr_status;
+
+    if (!this)
+        return -ENODEV;
+
+    mutex_lock(&this->status_lock);
+    curr_status  = this->status;
+    this->status = UIOMEM_OBJECT_DEAD;
+    mutex_unlock(&this->status_lock);
+    
+    if (curr_status == UIOMEM_OBJECT_DEAD)
+        return 0;
+
+    if (curr_status == UIOMEM_OBJECT_ALIVE)
+        cdev_device_del(&this->cdev, this->sys_dev);
+
+    uiomem_object_put(this);
     return 0;
 }
 
 /**
- * uiomem_device_remove()   - Remove uiomem object from device driver.
- * @dev:        handle to the device structure.
- * Return:      Success(=0) or error status(<0).
+ * uiomem_object_get() - Get a reference to a live uiomem object.
+ * @this:       Pointer to the uiomem object.
+ * Return:      0 on success, or -ENODEV if the object is not alive.
+ *
+ * Acquire a reference to the object's device using get_device().
+ *
+ * The object status is checked under status_lock to prevent
+ * acquiring a reference after the object has been marked as
+ * UDMABUF_OBJECT_DEAD.
+ *
  */
-static int uiomem_device_remove(struct device *dev)
+static int  uiomem_object_get(struct uiomem_object* this)
 {
-    struct uiomem_object* this   = dev_get_drvdata(dev);
-    int                   retval = 0;
-
-    if (this != NULL) {
-        retval = uiomem_object_destroy(this);
-        dev_set_drvdata(dev, NULL);
-    } else {
+    int retval = 0;
+    mutex_lock(&this->status_lock);
+    if (this->status == UIOMEM_OBJECT_ALIVE)
+        get_device(this->sys_dev);
+    else
         retval = -ENODEV;
-    }
+    mutex_unlock(&this->status_lock);
     return retval;
 }
+
+/**
+ * uiomem_object_put() - Release a reference to a uiomem object.
+ * @this:       Pointer to the uiomem object.
+ *
+ * Release a reference to the object's device using put_device().
+ *
+ * If the device reference count reaches zero, the object's
+ * release callback, uiomem_object_release(), is called to
+ * release the resources associated with the object.
+ */
+static void uiomem_object_put(struct uiomem_object* this)
+{
+    put_device(this->sys_dev);
+}
+
 
 /**
  * DOC: Uiomem Device List section.
@@ -1914,7 +2002,16 @@ static int of_property_read_ulong(const struct device_node* node, const char* pr
  */
 static int uiomem_platform_device_remove(struct device *dev)
 {
-    return uiomem_device_remove(dev);
+    struct uiomem_object* this   = dev_get_drvdata(dev);
+    int                   retval = 0;
+
+    if (this != NULL) {
+        retval = uiomem_object_destroy(this);
+        dev_set_drvdata(dev, NULL);
+    } else {
+        retval = -ENODEV;
+    }
+    return retval;
 }
 
 /**
@@ -2011,17 +2108,14 @@ static int uiomem_platform_device_probe(struct device *dev, struct resource* res
      * uiomem_object_create()
      */
     obj = uiomem_object_create(device_name, dev, minor_number);
-    if (IS_ERR_OR_NULL(obj)) {
-        retval = PTR_ERR(obj);
+    if (obj == NULL) {
         dev_err(dev, "object create failed. return=%d.\n", retval);
-        obj = NULL;
-        retval = (retval == 0) ? -EINVAL : retval;
+        retval = -EINVAL;
         goto failed;
     }
     /*
-     * mutex_lock() then dev_set_drvdata()
+     * dev_set_drvdata()
      */
-    mutex_lock(&obj->sem);
     dev_set_drvdata(dev, obj);
     /*
      * shareable property
@@ -2072,7 +2166,7 @@ static int uiomem_platform_device_probe(struct device *dev, struct resource* res
         if (obj->mem_region == NULL) {
             dev_err(dev, "request_mem_region failed.\n");
             retval = -EBUSY;
-            goto failed_with_unlock;
+            goto failed;
         }
         mem_addr        = obj->mem_region->start;
         mem_size        = resource_size(obj->mem_region);
@@ -2083,7 +2177,8 @@ static int uiomem_platform_device_probe(struct device *dev, struct resource* res
     if (of_property_read_u32(dev->of_node, "sync-mode", &u32_value) == 0) {
         if ((u32_value < SYNC_MODE_MIN) || (u32_value > SYNC_MODE_MAX)) {
             dev_err(dev, "invalid sync-mode property value=%d\n", u32_value);
-            goto failed_with_unlock;
+            retval = -EINVAL;
+            goto failed;
         }
         obj->sync_mode &= ~SYNC_MODE_MASK;
         obj->sync_mode |= (int)u32_value;
@@ -2100,7 +2195,8 @@ static int uiomem_platform_device_probe(struct device *dev, struct resource* res
     if (of_property_read_u32(dev->of_node, "sync-direction", &u32_value) == 0) {
         if (u32_value > DIR_MAX) {
             dev_err(dev, "invalid sync-direction property value=%d\n", u32_value);
-            goto failed_with_unlock;
+            retval = -EINVAL;
+            goto failed;
         }
         obj->sync_direction = (int)u32_value;
     }
@@ -2110,7 +2206,8 @@ static int uiomem_platform_device_probe(struct device *dev, struct resource* res
     if (of_property_read_ulong(dev->of_node, "sync-offset", &u64_value) == 0) {
         if (u64_value >= mem_size) {
             dev_err(dev, "invalid sync-offset property value=%llu\n", u64_value);
-            goto failed_with_unlock;
+            retval = -EINVAL;
+            goto failed;
         }
         obj->sync_offset = u64_value;
     }
@@ -2121,7 +2218,8 @@ static int uiomem_platform_device_probe(struct device *dev, struct resource* res
         if ((u64_value > SIZE_MAX) ||
             !uiomem_range_valid(obj, obj->sync_offset, u64_value)) {
             dev_err(dev, "invalid sync-size property value=%llu\n", (unsigned long long)u64_value);
-            goto failed_with_unlock;
+            retval = -EINVAL;
+            goto failed;
         }
         obj->sync_size = (size_t)u64_value;
     } else {
@@ -2133,7 +2231,7 @@ static int uiomem_platform_device_probe(struct device *dev, struct resource* res
     retval = uiomem_object_setup(obj, mem_addr, mem_size);
     if (retval) {
         dev_err(dev, "driver setup failed. return=%d\n", retval);
-        goto failed_with_unlock;
+        goto failed;
     }
 
     if (info_enable) {
@@ -2142,11 +2240,12 @@ static int uiomem_platform_device_probe(struct device *dev, struct resource* res
 
     return 0;
 
-  failed_with_unlock:
-    mutex_unlock(&obj->sem);
   failed:
-    if (obj != NULL)
+    if (obj != NULL) {
         (void)uiomem_platform_device_remove(dev);
+    } else {
+        dev_set_drvdata(dev, NULL);
+    }
 
     return retval;
 }
