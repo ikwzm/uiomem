@@ -66,7 +66,7 @@ MODULE_DESCRIPTION("User space mappable io-memory device driver");
 MODULE_AUTHOR("ikwzm");
 MODULE_LICENSE("Dual BSD/GPL");
 
-#define DRIVER_VERSION     "1.4.0-alpha.5"
+#define DRIVER_VERSION     "1.4.0-alpha.6"
 #define DRIVER_NAME        "uiomem"
 #define DEVICE_NAME_FORMAT "uiomem%d"
 #define DEVICE_MAX_NUM      256
@@ -110,15 +110,15 @@ MODULE_LICENSE("Dual BSD/GPL");
 #endif
 
 #if     (UIOMEM_CONFIG == 0)
-#define STATIC_DEVICE_NUM   8
+#define STATIC_DEVICE_NUM   4
 #elif   defined(UIOMEM_STATIC_DEVICE) && (UIOMEM_STATIC_DEVICE >  8)
 #warning "UIOMEM_STATIC_DEVICE must be 0 and 8"
-#define STATIC_DEVICE_NUM   8
+#define STATIC_DEVICE_NUM   4
 #elif   defined(UIOMEM_STATIC_DEVICE) && (UIOMEM_STATIC_DEVICE >= 0)
 #define STATIC_DEVICE_NUM   UIOMEM_STATIC_DEVICE
 #elif   defined(CONFIG_UIOMEM_STATIC_DEVICE) && (CONFIG_UIOMEM_STATIC_DEVICE >  8)
 #warning "CONFIG_UIOMEM_STATIC_DEVICE must be 0 and 8"
-#define STATIC_DEVICE_NUM   8
+#define STATIC_DEVICE_NUM   4
 #elif   defined(CONFIG_UIOMEM_STATIC_DEVICE) && (CONFIG_UIOMEM_STATIC_DEVICE >= 0)
 #define STATIC_DEVICE_NUM   CONFIG_UIOMEM_STATIC_DEVICE
 #else
