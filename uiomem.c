@@ -66,12 +66,48 @@ MODULE_DESCRIPTION("User space mappable io-memory device driver");
 MODULE_AUTHOR("ikwzm");
 MODULE_LICENSE("Dual BSD/GPL");
 
-#define DRIVER_VERSION     "1.3.0-beta.1"
+#define DRIVER_VERSION     "1.4.0-alpha.1"
 #define DRIVER_NAME        "uiomem"
 #define DEVICE_NAME_FORMAT "uiomem%d"
 #define DEVICE_MAX_NUM      256
+
+#if     defined(UIOMEM_CONFIG) && (UIOMEM_CONFIG != 0)
+#undef  UIOMEM_CONFIG
+#define UIOMEM_CONFIG       1
+#elif   defined(UIOMEM_CONFIG) && (UIOMEM_CONFIG == 0)
+#undef  UIOMEM_CONFIG
+#define UIOMEM_CONFIG       0
+#elif   defined(CONFIG_UIOMEM_CONFIG)
+#define UIOMEM_CONFIG       1
+#else   
+#define UIOMEM_CONFIG       0
+#endif
+
+#if     (UIOMEM_CONFIG == 0)
 #define UIOMEM_DEBUG        1
+#elif   defined(UIOMEM_DEBUG) && (UIOMEM_DEBUG != 0)
+#undef  UIOMEM_DEBUG
+#define UIOMEM_DEBUG        1
+#elif   defined(UIOMEM_DEBUG) && (UIOMEM_DEBUG == 0)
+#undef  UIOMEM_DEBUG
+#define UIOMEM_DEBUG        0
+#elif   defined(CONFIG_UIOMEM_DEBUG)
+#define UIOMEM_DEBUG        1
+#else
+#define UIOMEM_DEBUG        0
+#endif
+
+#if     (UIOMEM_CONFIG == 0)
 #define IOCTL_VERSION       2
+#elif   defined(UIOMEM_IOCTL) && (UIOMEM_IOCTL >  2)
+#define IOCTL_VERSION       2
+#elif   defined(UIOMEM_IOCTL) && (UIOMEM_IOCTL >= 0)
+#define IOCTL_VERSION       UIOMEM_IOCTL
+#elif   defined(CONFIG_UIOMEM_IOCTL)
+#define IOCTL_VERSION       2
+#else
+#define IOCTL_VERSION       0
+#endif
 
 #if     (UIOMEM_DEBUG == 1)
 #define UIOMEM_DEBUG_CHECK(this,debug) (this->debug)

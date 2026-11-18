@@ -5,13 +5,35 @@
 # For in kernel tree variables
 # 
 obj-$(CONFIG_UIOMEM) += uiomem.o
+ifdef UIOMEM_CONFIG
+ccflags-y            += -DUIOMEM_CONFIG=$(UIOMEM_CONFIG)
+endif
+ifdef UIOMEM_DEBUG
+ccflags-y            += -DUIOMEM_DEBUG=$(UIOMEM_DEBUG)
+endif
+ifdef UIOMEM_IOCTL
+ccflags-y            += -DUIOMEM_IOCTL=$(UIOMEM_IOCTL)
+endif
 
 #
 # For out of kernel tree variables
 #
-CONFIG_UIOMEM  ?= m
+CONFIG_UIOMEM                ?= m
+CONFIG_UIOMEM_DEBUG          ?= y
+CONFIG_UIOMEM_IOCTL          ?= y
 
 CONFIG_OPTIONS := CONFIG_UIOMEM=$(CONFIG_UIOMEM)
+CONFIG_OPTIONS += UIOMEM_CONFIG=1
+ifeq ($(CONFIG_UIOMEM_DEBUG), y)
+CONFIG_OPTIONS += UIOMEM_DEBUG=1
+else
+CONFIG_OPTIONS += UIOMEM_DEBUG=0
+endif
+ifeq ($(CONFIG_UIOMEM_IOCTL), y)
+CONFIG_OPTIONS += UIOMEM_IOCTL=2
+else
+CONFIG_OPTIONS += UIOMEM_IOCTL=0
+endif
 
 HOST_ARCH ?= $(shell uname -m | sed $(SUBARCH_SCRIPT))
 ARCH      ?= $(shell uname -m | sed $(SUBARCH_SCRIPT))
