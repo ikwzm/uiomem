@@ -7,31 +7,25 @@ See the develop branch for this project for details.
 
 https://github.com/ikwzm/uiomem/tree/develop
 
-Currently 1.2.2-beta.1 is tentatively released.
+Currently 1.4.0-beta.1 is tentatively released.
 
-https://github.com/ikwzm/uiomem/tree/v1.2.2-beta.1.
+https://github.com/ikwzm/uiomem/tree/v1.4.0-beta.1.
 
 # Overview
 
-## Introduction of uiomem
+## Introduction to uiomem
 
-uiomem is a Linux device driver for accessing a memory area outside the Linux
-Kernel management from user space.
+uiomem is a Linux device driver that allows user space applications to access I/O memory regions that are not managed by the Linux kernel.
 
-uiomem has following features.
+uiomem provides the following features:
 
-  * uiomem can enable CPU cache, so it can access memory at high speed.
-  * uiomem can manually invalidiate and flush the CPU cache.
-  * uiomem can be freely attached and detached from Linux Kernel.
+  * uiomem can map I/O memory regions as cacheable, allowing the CPU to access them at high speed.
+  * uiomem supports manual cache invalidation and write-back for mapped I/O memory regions to maintain cache coherency when the regions are shared with devices.
+  * uiomem can be dynamically loaded into and unloaded from the Linux kernel.
 
-It is possible to access memory from the user space by opneing the device
-file(e.g. /dev/uiomem0) and mapping to the user memory space, or using
-the read()/write() functions.
+User space applications can access I/O memory regions by opening a device file (e.g., `/dev/uiomem0`) and mapping the I/O memory into their address space using `mmap()`, or by using the `read()` and `write()` system calls.
 
-The start address and size of the allocated memory area can be specified when 
-the device driver is loaded (e.g. when loaded via the `insmod` command).
-Some platforms allow to specify them in the device tree.
-
+The start address and size of the I/O memory region can be specified through module parameters when the driver is loaded (e.g., using the `insmod` command). On some platforms, these parameters can also be specified in the device tree.
 
 ## Supported platforms
 
@@ -44,76 +38,100 @@ Some platforms allow to specify them in the device tree.
 
 ## Compile
 
-The following `Makefile` is included in the repository.
+This repository contains a [Makefie](./Makefile).
+Makefile has the following Parameters:
 
-```Makefile:Makefile
-# SPDX-License-Identifier: GPL-2.0 OR MIT
-# Copyright (C) 2015-2023 Ichiro Kawazome
+| Parameter Name                       | Description                  | Default Value                        |
+|--------------------------------------|-----------------------------------|--------------------------------------|
+| ARCH                                 | Architecture Name                 | `$(shell uname -m \| sed -e s/arm.*/arm/ -e s/aarch64.*/arm64/ -e s/riscv.*/riscv/ )` |
+| KERNEL_SRC                           | Kernel Source Directory           | `/lib/modules/$(shell uname -r)/build` |
+| CONFIG_UIOMEM_STATIC_DEVICE          | Number of static devices (0 to 8) | 8 |
+| CONFIG_UIOMEM_DEBUG                  | Enable debug report               | y |
+| CONFIG_UIOMEM_IOCTL                  | Enable ioctl                      | y |
 
-#
-# For in kernel tree variables
-# 
-obj-$(CONFIG_UIOMEM) += uiomem.o
+### Cross Compile
 
-#
-# For out of kernel tree variables
-#
-CONFIG_UIOMEM  ?= m
+If you have a cross-compilation environment for target system, you can compile with:
 
-CONFIG_OPTIONS := CONFIG_UIOMEM=$(CONFIG_UIOMEM)
+```console
+shell$ make ARCH=arm KERNEL_SRC=/home/fpga/src/linux-5.10.120-zynqmp-fpga-generic all
+```
+The ARCH variable specifies the architecture name.    
+The KERNEL_SRC variable specifies the Linux Kernel source code path.    
 
-HOST_ARCH ?= $(shell uname -m | sed $(SUBARCH_SCRIPT))
-ARCH      ?= $(shell uname -m | sed $(SUBARCH_SCRIPT))
+### Self Compile
 
-SUBARCH_SCRIPT := -e s/i.86/x86/ -e s/x86_64/x86/ \
-		  -e s/sun4u/sparc64/ \
-		  -e s/arm.*/arm/ -e s/sa110/arm/ \
-		  -e s/s390x/s390/ \
-		  -e s/ppc.*/powerpc/ -e s/mips.*/mips/ \
-		  -e s/sh[234].*/sh/ -e s/aarch64.*/arm64/ \
-		  -e s/riscv.*/riscv/ -e s/loongarch.*/loongarch/
+If your target system is capable of self-compiling the Linux Kernel module, you can compile it with:
 
-ifeq ($(ARCH), arm)
- ifneq ($(HOST_ARCH), arm)
-   CROSS_COMPILE ?= arm-linux-gnueabihf-
- endif
-endif
-ifeq ($(ARCH), arm64)
- ifneq ($(HOST_ARCH), arm64)
-   CROSS_COMPILE ?= aarch64-linux-gnu-
- endif
-endif
+```console
+shell$ make all
+```
+You need the kernel source code in ```/lib/modules/$(shell uname -r)/build``` to compile.
 
-ifdef KERNEL_SRC
-  KERNEL_SRC_DIR := $(KERNEL_SRC)
-else
-  KERNEL_SRC_DIR ?= /lib/modules/$(shell uname -r)/build
-endif
-#
-# For out of kernel tree rules
-#
-all:
-	$(MAKE) -C $(KERNEL_SRC_DIR) ARCH=$(ARCH) CROSS_COMPILE=$(CROSS_COMPILE) M=$(PWD) $(CONFIG_OPTIONS) modules
+### Build in Linux Source Tree
 
-modules_install:
-	$(MAKE) -C $(KERNEL_SRC_DIR) ARCH=$(ARCH) CROSS_COMPILE=$(CROSS_COMPILE) M=$(PWD) $(CONFIG_OPTIONS) modules_install
+It can also be compiled into the Linux Kernel Source Tree.
 
-clean:
-	$(MAKE) -C $(KERNEL_SRC_DIR) ARCH=$(ARCH) CROSS_COMPILE=$(CROSS_COMPILE) M=$(PWD) clean
+#### Make directory in Linux Kernel Source Tree.
 
+```console
+shell$ mkdir <linux-source-tree>/drivers/staging/uiomem
+```
+
+#### Copy files to Linux Kernel Source Tree.
+
+```console
+shell$ cp Kconfig Makefile uiomem.c <linux-source-tree>/drivers/staging/uiomem
+```
+
+#### Add uiomem to Kconfig
+
+```console
+shell$ diff <linux-source-tree>/drivers/staging/Kconfig
+  :
++source "drivers/staging/uiomem/Kconfig"
++
+```
+
+#### Add uiomem to Makefile
+
+```Makefile
+shell$ diff <linux-source-tree>/drivers/staging/Makefile
+  :
++obj-$(CONFIG_UIOMEM) += uiomem/
+```
+
+#### Set CONFIG_UIOMEM
+
+For make menuconfig, set the following:
+
+```console
+Device Drivers --->
+  Staging drivers --->
+    <M> uiomem(uiomem(User space mappable I/O memory)) --->
+```
+
+If you write it directly in defconfig:
+
+```console
+shell$ diff <linux-source-tree>/arch/arm64/configs/xilinx_zynqmp_defconfig
+   :
++CONFIG_UIOMEM=m
 ```
 
 ## Install
 
-Load the uiomem kernel driver using `insmod`.
-The start address and size of the allocated memory area should be provided as an argument as follows.
-The device driver is created, and allocates memory area with the specified address and size.
-The memory area that can be specified must be aligned with the page size.
-The maximum number of memory area that can be allocated using `insmod` is 8 (uiomem0/1/2/3/4/5/6/7).
+Load the uiomem kernel driver using insmod.
+Specify the start address and size of the I/O memory region as module parameters, as shown below.
+The driver creates a device for the specified I/O memory region.
+Both the start address and size of the I/O memory region must be aligned to the system page size.
+
+The number of static devices that can be created when loading the module using insmod (uiomem0, uiomem1, ...) can be configured at build time using CONFIG_UIOMEM_STATIC_DEVICE.
+The configurable range is 0 to 8, and the default value is 8.
 
 ```console
 shell$ sudo insmod uiomem.ko uiomem0_addr=0x0400000000 uiomem0_size=0x00040000
-[  562.657246] uiomem uiomem0: driver version = 1.2.2-beta.1
+[  562.657246] uiomem uiomem0: driver version = 1.4.0-beta.1
 [  562.657264] uiomem uiomem0: ioctl version  = 1
 [  562.657264] uiomem uiomem0: major number   = 238
 [  562.657270] uiomem uiomem0: minor number   = 0
@@ -135,12 +153,41 @@ shell$ sudo rmmod uiomem
 [  657.672544] uiomem uiomem.0: driver removed.
 ```
 
-## Configuration via the device tree file
+## Configuration via the module parameters
 
-In addition to the allocation via the `insmod` command and its arguments,
-memory area can be allocated by specifying the reg property in the device tree file.
-When a device tree file contains an entry like the following, uiomem will allocate
-memory area and create device drivers when loaded by `insmod`.
+The uiomem kernel module has the following module parameters:
+
+| Parameter Name     | Type  | Default | Description                                |
+|:-------------------|:------|---------|:-------------------------------------------|
+| uiomem_addr[0-7]   | ulong |    0    | Start address of uiomem[0-7]               |
+| uiomem_size[0-7]   | ulong |    0    | Size of uiomem[0-7]                        |
+| uiomem_option[0-7] | ulong |    2    | Memory attributes of uiomem[0-7]           |
+| info_enable        | int   |    1    | nable installation/uninstallation messages |
+
+The `uiomem_option[0-7]` parameter is a bit field with the following flags:
+
+  * `coherent` (bit 2): Indicates whether cache coherency is maintained by hardware.
+    * 1: Hardware maintains cache coherency. No explicit cache management by the driver is required.
+    * 0: Hardware does not maintain cache coherency. Explicit cache management by the driver is required.
+  * `cache` (bit 1): Controls whether CPU caching is enabled when accessing I/O memory.
+    * 1: CPU caching is enabled.
+    * 0: CPU caching is disabled.
+  * `shareable` (bit 0): Controls the shareability attribute of the memory region.
+
+The `cache` and `coherent` flags are used together to select one of the following three cache modes:
+
+| Cache Mode        | cache | coherent | Description            |
+|:------------------|:-----:|:--------:|:-----------------------|
+| cache-off         |   0   |    1     | CPU caching is disabled.<br>No explicit cache management is required. |
+| cache-noncoherent |   1   |    0     | CPU caching is enabled.<br>The driver must explicitly manage cache coherency. |
+| cache-coherent    |   1   |    1     | CPU caching is enabled.<br>Hardware maintains cache coherency, so the driver does not need to explicitly manage cache coherency. |
+
+
+## Configuration via the device tree
+
+In addition to specifying I/O memory regions through module parameters when loading the driver with `insmod`, I/O memory regions can also be specified using the `reg` property in the device tree.
+
+When the device tree contains an entry like the following, uiomem creates a device for the specified I/O memory region when the driver is loaded using `insmod`.
 
 ```devicetree:devicetree.dts
 		#address-cells = <2>;
@@ -156,7 +203,7 @@ memory area and create device drivers when loaded by `insmod`.
 
 ```console
 shell$ sudo insmod uiomem.ko
-[  773.889476] uiomem uiomem0: driver version = 1.2.2-beta.1
+[  773.889476] uiomem uiomem0: driver version = 1.4.0-beta.1
 [  773.889496] uiomem uiomem0: ioctl version  = 1
 [  773.889496] uiomem uiomem0: major number   = 237
 [  773.889501] uiomem uiomem0: minor number   = 0
@@ -188,16 +235,15 @@ The following properties can be set in the device tree.
 
 ### `compatible`
 
-The `compatible` property is used to set the corresponding device driver when loading
-uiomem. The `compatible` property is mandatory. Be sure to specify `compatible`
-property as "ikwzm,uiomem".
+The `compatible` property is used to identify the device driver that handles the device.    
+This property is mandatory and must be set to `"ikwzm,uiomem"`.
 
 ### `reg`
 
-The `reg` property specifies the physical address and size.
-The `reg` property is used when uiomem allocates a buffer outside the management of Linux Kernel.
-The memory area that can be specified must be aligned with the page size.
-Either the `reg` property or the `memory-region` property is required.
+The `reg` property specifies the physical address and size of an I/O memory region.    
+It is used to specify an I/O memory region that is not managed by the Linux kernel.    
+Both the start address and size of the I/O memory region must be aligned to the system page size.    
+Either the `reg` property or the `memory-region` property is required.    
 
 ```devicetree:devicetree.dts
 		#address-cells = <2>;
@@ -210,9 +256,9 @@ Either the `reg` property or the `memory-region` property is required.
 
 ### `memory-region`
 
-The `memory-region` property specifies the memory region allocated for reserved memory.
-The memory region specified by the `memory-region` property must always have the `no-map` property specified.
-Either the `reg` property or the `memory-region` property is required.
+The `memory-region` property specifies a reserved memory region.   
+The referenced reserved memory region must have the `no-map` property.    
+Either the `reg` property or the `memory-region` property is required.   
 
 ```devicetree:devicetree.dts
 		#address-cells = <2>;
@@ -233,7 +279,8 @@ Either the `reg` property or the `memory-region` property is required.
 
 ### `cache-off`
 
-The `cache-off` property specifies that uiomem is treated as non-cacheable and coherent.
+The `cache-off` property specifies that CPU caching is disabled for the I/O memory region.
+Since CPU caching is disabled, cache coherency management is not required.
 
 ```devicetree:devicetree.dts
 		uiomem0 {
@@ -246,7 +293,8 @@ The `cache-off` property specifies that uiomem is treated as non-cacheable and c
 
 ### `cache-noncoherent`
 
-The `cache-noncoherent` property specifies that uiomem is treated as cacheable but non-coherent.
+The `cache-noncoherent` property specifies that CPU caching is enabled for the I/O memory region, but cache coherency is not maintained by hardware.
+Therefore, the driver must explicitly manage cache coherency.
 
 ```devicetree:devicetree.dts
 		uiomem0 {
@@ -259,7 +307,8 @@ The `cache-noncoherent` property specifies that uiomem is treated as cacheable b
 
 ### `cache-coherent`
 
-The `cache-coherent` property specifies that uiomem is treated as cacheable and coherent.
+The `cache-coherent` property specifies that CPU caching is enabled for the I/O memory region and cache coherency is maintained by hardware.
+Therefore, the driver does not need to explicitly manage cache coherency.
 
 ```devicetree:devicetree.dts
 		uiomem0 {
@@ -291,13 +340,14 @@ The `shareable` property is specified when multiple uiomem shares the memory spa
 
 ### `minor-number`
 
-The `minor-number` property is used to set the minor number.
-The valid minor number range is 0 to 255. A minor number provided as `insmod`
-argument will has higher precedence, and when definition in the device tree has
-colliding number, creation of the device defined in the device tree will fail.
+The `minor-number` property specifies the minor number of the device.
 
-The `minor-number` property is optional. When the `minor-number` property is not
-specified, uiomem automatically assigns an appropriate one.
+The valid minor number range is 0 to 255.
+A minor number specified through an `insmod` argument takes precedence over the value specified in the device tree.
+If the specified minor number conflicts with an existing device, the device defined in the device tree will not be created.
+
+The `minor-number` property is optional.
+If it is omitted, uiomem automatically assigns an available minor number.
 
 ```devicetree:devicetree.dts
 		uiomem0 {
@@ -310,41 +360,37 @@ specified, uiomem automatically assigns an appropriate one.
 
 ### `device-name`
 
-The `device-name` property is used to set the name of device.
+The `device-name` property specifies the device name.
 
-The `device-name` property is optional. The device name is determined as follow:
+The `device-name` property is optional. If it is omitted, the device name is determined as follows:
 
-  1. If `device-name` property is specified, the value of `device-name` property is used.
-  2. If `device-name` property is not present, and if `minor-number` property is
-     specified, `sprintf("uiomem%d", minor-number)` is used.
+  1. If `device-name` is specified, its value is used as the device name.
+  2. If `device-name` is not specified but `minor-number` is specified, the device name is generated using `sprintf("uiomem%d", minor-number)`.
 
 ### `sync-offset`
 
-The `sync-offset` property is used to set the start of the buffer range when manually
-controlling the cache of uiomem. 
+The `sync-offset` property specifies the starting offset of the memory area for which the cache is manually managed.
 
 The `sync-offset` property is optional.
-When the `sync-offset` property is not specified, `sync-offset` is set to <0>.
+If it is omitted, the starting offset defaults to `0`.
 
 ### `sync-size`
 
-The `sync-size` property is used to set the size of the buffer range when manually
-controlling the cache of uiomem.
+The `sync-size` property specifies the size of the memory area for which the cache is manually managed.
 
 The `sync-size` property is optional.
-When the `sync-size` property is not specified, `sync-size` is set to ths size specified by the `reg` property.
+If it is omitted, the size defaults to the size specified by the `reg` property.
 
 ### `sync-direction`
 
-The `sync-direction` property is used to set the direction of DMA when manually
-controlling the cache of uiomem
+The `sync-direction` property specifies the direction of CPU access to the memory area:
 
-  * `sync-direction`=<0>: Read and Write
-  * `sync-direction`=<1>: Write Only
-  * `sync-direction`=<2>: Read Only
+  * `0`: Read and Write
+  * `1`: Write Only
+  * `2`: Read Only
 
 The `sync-direction` property is optional.
-When the `sync-direction` property is not specified, `sync-direction` is set to <0>.
+If it is omitted, the direction defaults to `0` (Read and Write).
 
 ```devicetree:devicetree.dts
 		uiomem0 {
@@ -356,9 +402,9 @@ When the `sync-direction` property is not specified, `sync-direction` is set to 
 		};
 ```
 
-## Device file
+## Device Files
 
-When uiomem is loaded into the kernel, the following device files are created.
+When uiomem is loaded, the following device files are created.
 `<device-name>` is a placeholder for the device name described in the previous section.
 
   * `/dev/<device-name>`
@@ -404,7 +450,7 @@ shell$ dd if=/dev/uiomem0 of=random.bin bs=4096
 
 ### `phys_addr`
 
-The physical address of a memory area can be retrieved by reading `/sys/class/uiomem/<device-name>/phys_addr`.
+The physical address of an I/O memory region can be retrieved by reading `/sys/class/uiomem/<device-name>/phys_addr`.
 
 ```C:uiomem_test.c
     unsigned char  attr[1024];
@@ -418,7 +464,7 @@ The physical address of a memory area can be retrieved by reading `/sys/class/ui
 
 ### `size`
 
-The size of a memory area can be retrieved by reading `/sys/class/uiomem/<device-name>/size`.
+The size of an I/O memory region can be retrieved by reading `/sys/class/uiomem/<device-name>/size`.
 
 ```C:uiomem_test.c
     unsigned char  attr[1024];
@@ -432,10 +478,10 @@ The size of a memory area can be retrieved by reading `/sys/class/uiomem/<device
 
 ### `cached`
 
-The device file `/sys/class/uiomem/<device-name>/cached` indicates whether `uiomem` is allocated as a cacheable region.
+The sysfs attribute `/sys/class/uiomem/<device-name>/cached` indicates whether the I/O memory region is cacheable.
 
-If this value is 1, the uiomem is cacheable.
-If this value is 0, the uiomem is non-cacheable.
+  * `1`: The I/O memory region is cacheable.
+  * `0`: The I/O memory region is non-cacheable.
 
 ```C:uiomem_test.c
     unsigned char  attr[1024];
@@ -449,12 +495,10 @@ If this value is 0, the uiomem is non-cacheable.
 
 ### `coherent`
 
-The device file `/sys/class/uiomem/<device-name>/coherent` indicates whether `uiomem` is allocated as a coherent region.
-If this value is 1, the uiomem is coherent.
-If this value is 0, the uiomem is non-coherent.
+The sysfs attribute `/sys/class/uiomem/<device-name>/coherent` indicates whether cache coherency is maintained by hardware for the I/O memory region.
 
-If it is coherent, explicit cache synchronization is not required.
-If it is non-coherent, explicit cache synchronization is required.
+  * `1`: The I/O memory region is coherent. Explicit cache synchronization is not required.
+  * `0`: The I/O memory region is non-coherent. Explicit cache synchronization is required.
 
 ```C:uiomem_test.c
     unsigned char  attr[1024];
@@ -482,8 +526,7 @@ Whether the memory range of uiomem is shareable can be determined by reading `/s
 
 ### `sync_offset`
 
-The device file `/sys/class/uiomem/<device-name>/sync_offset` is used to specify
-the start address of a memory block of which cache is manually managed.
+The sysfs attribute `/sys/class/uiomem/<device-name>/sync_offset` specifies the starting offset, relative to the beginning of the I/O memory region, for which the cache is manually managed.
 
 ```C:uiomem_test.c
     unsigned char  attr[1024];
@@ -497,8 +540,7 @@ the start address of a memory block of which cache is manually managed.
 
 ### `sync_size`
 
-The device file `/sys/class/uiomem/<device-name>/sync_size` is used to specify
-the size of a memory block of which cache is manually managed.
+The sysfs attribute `/sys/class/uiomem/<device-name>/sync_size` specifies the size of the I/O memory region for which the cache is manually managed.
 
 ```C:uiomem_test.c
     unsigned char  attr[1024];
@@ -512,12 +554,11 @@ the size of a memory block of which cache is manually managed.
 
 ### `sync_direction`
 
-The device file `/sys/class/uiomem/<device-name>/sync_direction` is used to set the
-direction(Read/Write) of memory area of which cache is manually managed.
+The sysfs attribute `/sys/class/uiomem/<device-name>/sync_direction` specifies the direction of CPU access to the I/O memory region for which the cache is manually managed.
 
-  - 0: sets Read and Write
-  - 1: sets Write Only
-  - 2: sets Read Only
+  * `0`: Read and Write
+  * `1`: Write Only
+  * `2`: Read Only
 
 ```C:uiomem_test.c
     unsigned char  attr[1024];
@@ -531,10 +572,10 @@ direction(Read/Write) of memory area of which cache is manually managed.
 
 ### `sync_owner`
 
-The device file `/sys/class/uiomem/<device-name>/sync_owner` reports the owner of
-the memory block in the manual cache management mode.
-If this value is 1, the buffer is owned by the device.
-If this value is 0, the buffer is owned by the cpu.
+The sysfs attribute `/sys/class/uiomem/<device-name>/sync_owner` reports the current owner of the I/O memory region in manual cache management mode.
+
+  * `1`: The I/O memory region is owned by the device.
+  * `0`: The I/O memory region is owned by the CPU.
 
 ```C:uiomem_test.c
     unsigned char  attr[1024];
@@ -548,12 +589,11 @@ If this value is 0, the buffer is owned by the cpu.
 
 ### `sync_for_cpu`
 
-In the manual cache management mode, CPU can be the owner of the buffer by writing
-non-zero to the device file `/sys/class/uiomem/<device-name>/sync_for_cpu`.
-This device file is write only.
+In manual cache management mode, writing a non-zero value to the sysfs attribute `/sys/class/uiomem/<device-name>/sync_for_cpu` transfers ownership of the I/O memory region to the CPU.
 
-If '1' is written to device file, if `sync_direction` is 2(=Read Only) or 0(=Read and Write),
-the write to the device file invalidates a cache specified by `sync_offset` and `sync_size`.
+This sysfs attribute is write-only.
+
+When `1` is written to this attribute, the cache for the I/O memory region specified by `sync_offset` and `sync_size` is invalidated if `sync_direction` is `2` (Read Only) or `0` (Read and Write).
 
 ```C:uiomem_test.c
     unsigned char  attr[1024];
@@ -584,13 +624,11 @@ The sync_offset/sync_size/sync_direction specified by ```sync_for_cpu``` is temp
 
 ### `sync_for_device`
 
-In the manual cache management mode, DEVICE can be the owner of the buffer by
-writing non-zero to the device file `/sys/class/uiomem/<device-name>/sync_for_device`.
-This device file is write only.
+In manual cache management mode, writing a non-zero value to the sysfs attribute `/sys/class/uiomem/<device-name>/sync_for_device` transfers ownership of the I/O memory region to the device.
 
-If '1' is written to device file, if `sync_direction` is 1(=Write Only) or 0(=Read and Write),
-the write to the device file flushes a cache specified by `sync_offset` and `sync_size` (i.e. the
-cached data, if any, will be updated with data on DDR memory).
+This sysfs attribute is write-only.
+
+When `1` is written to this attribute, the cache for the I/O memory region specified by `sync_offset` and `sync_size` is written back to memory if `sync_direction` is `1` (Write Only) or `0` (Read and Write).
 
 ```C:uiomem_test.c
     unsigned char  attr[1024];
@@ -619,7 +657,395 @@ The value written to this device file can include sync_offset, sync_size, and sy
 
 The sync_offset/sync_size/sync_direction specified by ```sync_for_device``` is temporary and does not affect the ```sync_offset``` or ```sync_size``` or ```sync_direction``` device files.
 
+## ioctl
 
+Starting with uiomem v1.3.0-beta.1, devices can be controlled by issuing ioctl to the device file.
+The ioctl can do the following
+
+ * `UIOMEM_IOCTL_GET_DRV_INFO`
+ * `UIOMEM_IOCTL_GET_SIZE`
+ * `UIOMEM_IOCTL_GET_PHYS_ADDR`
+ * `UIOMEM_IOCTL_GET_SYNC_OWNER`
+ * `UIOMEM_IOCTL_GET_DEV_INFO`
+ * `UIOMEM_IOCTL_GET_SYNC`
+ * `UIOMEM_IOCTL_SET_SYNC`
+ * `UIOMEM_IOCTL_SET_SYNC_FOR_CPU`
+ * `UIOMEM_IOCTL_SET_SYNC_FOR_DEVICE`
+
+### uiomem-ioctl.h
+
+The following header file is required to use ioctl.
+
+```C:uiomem-ioctl.h
+#ifndef  UIOMEM_IOCTL_H
+#define  UIOMEM_IOCTL_H
+#include <linux/ioctl.h>
+
+#define DEFINE_UIOMEM_IOCTL_FLAGS(name,type,lo,hi)                     \
+static const  int      UIOMEM_IOCTL_FLAGS_ ## name ## _SHIFT = (lo);   \
+static const  uint64_t UIOMEM_IOCTL_FLAGS_ ## name ## _MASK  =         \
+    (((hi)-(lo)+1) >= 64) ? ~((uint64_t)0) :                           \
+                            (((uint64_t)1 << ((hi)-(lo)+1)) - 1);      \
+static inline void SET_UIOMEM_IOCTL_FLAGS_ ## name(type *p, int value) \
+{                                                                      \
+    const int      shift = UIOMEM_IOCTL_FLAGS_ ## name ## _SHIFT;      \
+    const uint64_t mask  = UIOMEM_IOCTL_FLAGS_ ## name ## _MASK;       \
+    p->flags &= ~(mask << shift);                                      \
+    p->flags |= ((value & mask) << shift);                             \
+}                                                                      \
+static inline int  GET_UIOMEM_IOCTL_FLAGS_ ## name(type *p)            \
+{                                                                      \
+    const int      shift = UIOMEM_IOCTL_FLAGS_ ## name ## _SHIFT;      \
+    const uint64_t mask  = UIOMEM_IOCTL_FLAGS_ ## name ## _MASK;       \
+    return (int)((p->flags >> shift) & mask);                          \
+}
+
+typedef struct {
+    uint64_t flags;
+    char     version[16];
+    char     sync_operation[16];
+} uiomem_ioctl_drv_info;
+
+DEFINE_UIOMEM_IOCTL_FLAGS(IOCTL_VERSION    , uiomem_ioctl_drv_info ,  0,  7)
+DEFINE_UIOMEM_IOCTL_FLAGS(STATIC_DEVICE_NUM, uiomem_ioctl_drv_info ,  8, 15)
+
+typedef struct {
+    uint64_t flags;
+    uint64_t size;
+    uint64_t addr;
+} uiomem_ioctl_dev_info;
+
+DEFINE_UIOMEM_IOCTL_FLAGS(SHAREABLE    , uiomem_ioctl_dev_info ,  0,  0)
+DEFINE_UIOMEM_IOCTL_FLAGS(CACHED       , uiomem_ioctl_dev_info ,  1,  1)
+DEFINE_UIOMEM_IOCTL_FLAGS(COHERENT     , uiomem_ioctl_dev_info ,  2,  2)
+
+typedef struct {
+    uint64_t flags;
+    uint64_t size;
+    uint64_t offset;
+} uiomem_ioctl_sync_args;
+
+DEFINE_UIOMEM_IOCTL_FLAGS(SYNC_CMD     , uiomem_ioctl_sync_args,  0,  1)
+DEFINE_UIOMEM_IOCTL_FLAGS(SYNC_DIR     , uiomem_ioctl_sync_args,  2,  3)
+DEFINE_UIOMEM_IOCTL_FLAGS(SYNC_FAST    , uiomem_ioctl_sync_args,  4,  4)
+DEFINE_UIOMEM_IOCTL_FLAGS(SYNC_MODE    , uiomem_ioctl_sync_args,  8, 15)
+DEFINE_UIOMEM_IOCTL_FLAGS(SYNC_OWNER   , uiomem_ioctl_sync_args, 16, 16)
+
+enum {
+    UIOMEM_IOCTL_FLAGS_SYNC_CMD_FOR_CPU    = 1,
+    UIOMEM_IOCTL_FLAGS_SYNC_CMD_FOR_DEVICE = 3
+};
+
+#define UIOMEM_IOCTL_MAGIC               'U'
+#define UIOMEM_IOCTL_GET_DRV_INFO        _IOR (UIOMEM_IOCTL_MAGIC, 1, uiomem_ioctl_drv_info)
+#define UIOMEM_IOCTL_GET_SIZE            _IOR (UIOMEM_IOCTL_MAGIC, 2, uint64_t)
+#define UIOMEM_IOCTL_GET_PHYS_ADDR       _IOR (UIOMEM_IOCTL_MAGIC, 3, uint64_t)
+#define UIOMEM_IOCTL_GET_SYNC_OWNER      _IOR (UIOMEM_IOCTL_MAGIC, 4, uint32_t)
+#define UIOMEM_IOCTL_SET_SYNC_FOR_CPU    _IOW (UIOMEM_IOCTL_MAGIC, 5, uint64_t)
+#define UIOMEM_IOCTL_SET_SYNC_FOR_DEVICE _IOW (UIOMEM_IOCTL_MAGIC, 6, uint64_t)
+#define UIOMEM_IOCTL_GET_DEV_INFO        _IOR (UIOMEM_IOCTL_MAGIC, 7, uiomem_ioctl_dev_info)
+#define UIOMEM_IOCTL_GET_SYNC            _IOR (UIOMEM_IOCTL_MAGIC, 8, uiomem_ioctl_sync_args)
+#define UIOMEM_IOCTL_SET_SYNC            _IOW (UIOMEM_IOCTL_MAGIC, 9, uiomem_ioctl_sync_args)
+
+#endif /* #ifndef UIOMEM_IOCTL_H */
+```
+
+### Example of required header files
+
+```C:uiomem-ioctl-test.c
+#include <inttypes.h>
+#include <string.h>
+#include <fcntl.h>
+#include <unistd.h>
+#include <sys/ioctl.h>
+#include "uiomem-ioctl.h"
+```
+
+### `UIOMEM_IOCTL_GET_DRV_INFO`
+
+This ioctl retrieves driver information.
+The returned information includes the driver's capabilities and version information.
+
+```C:uiomem-ioctl-test.c
+    if ((fd = open("/dev/uiomem0", O_RDWR)) != -1) {
+        uiomem_ioctl_drv_info drv_info = {0};
+        int status = ioctl(fd, UIOMEM_IOCTL_GET_DRV_INFO, &drv_info);
+	if (status == 0) {
+            int static_device_num = GET_UIOMEM_IOCTL_FLAGS_STATIC_DEVICE_NUM(&drv_info);
+            int ioctl_version     = GET_UIOMEM_IOCTL_FLAGS_IOCTL_VERSION(&drv_info);
+            char* drv_version     = strdup(&drv_info.version[0]);
+	}
+        close(fd);
+    }
+```
+
+### `UIOMEM_IOCTL_GET_SIZE`
+
+This ioctl retrieves the size of an I/O memory region.
+
+```C:uiomem-ioctl-test.c
+    if ((fd = open("/dev/uiomem0", O_RDWR)) != -1) {
+        uint64_t size;
+        status = ioctl(fd, UIOMEM_IOCTL_GET_SIZE, &size);
+        close(fd);
+    }
+```
+
+### `UIOMEM_IOCTL_GET_PHYS_ADDR`
+
+This ioctl retrieves the physical address of an I/O memory region.
+
+```C:uiomem-ioctl-test.c
+    if ((fd = open("/dev/uiomem0", O_RDWR)) != -1) {
+        uint64_t phys_addr;
+        status = ioctl(fd, UIOMEM_IOCTL_GET_PHYS_ADDR, &phys_addr);
+        close(fd);
+    }
+```
+
+### `UIOMEM_IOCTL_GET_SYNC_OWNER`
+
+This ioctl retrieves the current owner of the I/O memory region in manual cache management mode.
+
+  * `1`: The I/O memory region is owned by the device.
+  * `0`: The I/O memory region is owned by the CPU.
+
+```C:uiomem-ioctl-test.c
+    if ((fd = open("/dev/uiomem0", O_RDWR)) != -1) {
+        int sync_owner;
+        status = ioctl(fd, UIOMEM_IOCTL_GET_SYNC_OWNER, &sync_owner);
+        close(fd);
+    }
+```
+
+### `UIOMEM_IOCTL_SET_SYNC_FOR_CPU`
+
+This ioctl requests cache synchronization for CPU access.
+
+The ioctl takes a 64-bit value as an argument.
+When the value is `1`, the driver invalidates the cache range for the I/O memory region specified by `sync_offset` and `sync_size` if `sync_direction` is `2` (Read Only) or `0` (Read and Write).
+
+The mutex protects the synchronization state and cache synchronization operation against concurrent access by code paths that use the same mutex.
+
+```C:uiomem-ioctl-test.c
+    if ((fd = open("/dev/uiomem0", O_RDWR)) != -1) {
+        uint64_t sync_for_cpu = 1;
+        status = ioctl(fd, UIOMEM_IOCTL_SET_SYNC_FOR_CPU, &sync_for_cpu);
+        close(fd);
+    }
+```
+
+The 64-bit value passed to this ioctl can also encode `sync_offset`, `sync_size`, and `sync_direction`.
+
+```C:uiomem-ioctl-test.c
+    if ((fd = open("/dev/uiomem0", O_RDWR)) != -1) {
+        unsigned long sync_offset     = 0;
+        unsigned long sync_size       = 0x10000;
+        unsigned int  sync_direction  = 0;
+        uint64_t      sync_for_cpu    = ((uint64_t)(sync_offset    & 0xFFFFFFFF) << 32) |
+                                        ((uint64_t)(sync_size      & 0xFFFFFFF0) <<  0) |
+                                        ((uint64_t)(sync_direction & 0x00000003) <<  2) |
+                                        0x00000001;
+        status = ioctl(fd, UIOMEM_IOCTL_SET_SYNC_FOR_CPU, &sync_for_cpu);
+        close(fd);
+    }
+```
+
+The `sync_offset`, `sync_size`, and `sync_direction` values encoded in `sync_for_cpu` apply only to the current synchronization request. They do not modify the synchronization parameters configured for the device.
+
+### `UIOMEM_IOCTL_SET_SYNC_FOR_DEVICE`
+
+This ioctl requests cache synchronization for device access.
+
+The ioctl takes a 64-bit value as an argument.
+When the value is `1`, the driver writes back the cache range for the I/O memory region specified by `sync_offset` and `sync_size` if `sync_direction` is `1` (Write Only) or `0` (Read and Write).
+
+The mutex protects the synchronization state and cache synchronization operation against concurrent access by code paths that use the same mutex.
+
+```C:uiomem-ioctl-test.c
+    if ((fd = open("/dev/uiomem0", O_RDWR)) != -1) {
+        uint64_t sync_for_device = 1;
+        status = ioctl(fd, UIOMEM_IOCTL_SET_SYNC_FOR_DEVICE, &sync_for_device);
+        close(fd);
+    }
+```
+
+The 64-bit value passed to this ioctl can also encode `sync_offset`, `sync_size`, and `sync_direction`.
+
+```C:uiomem-ioctl-test.c
+    if ((fd = open("/dev/uiomem0", O_RDWR)) != -1) {
+        unsigned long sync_offset     = 0;
+        unsigned long sync_size       = 0x10000;
+        unsigned int  sync_direction  = 0;
+        uint64_t      sync_for_device = ((uint64_t)(sync_offset    & 0xFFFFFFFF) << 32) |
+                                        ((uint64_t)(sync_size      & 0xFFFFFFF0) <<  0) |
+                                        ((uint64_t)(sync_direction & 0x00000003) <<  2) |
+                                        0x00000001;
+        status = ioctl(fd, UIOMEM_IOCTL_SET_SYNC_FOR_DEVICE, &sync_for_device);
+        close(fd);
+    }
+```
+
+The `sync_offset`, `sync_size`, and `sync_direction` values encoded in `sync_for_device` apply only to the current synchronization request. They do not modify the synchronization parameters configured for the device.
+
+### `UIOMEM_IOCTL_SET_SYNC_FOR_DEVICE`
+
+This ioctl requests cache synchronization for device access.
+
+The ioctl writes a 64-bit value to `sync_for_device`.
+When the value is `1`, the driver writes back the cache range specified by `sync_offset` and `sync_size` to memory if `sync_direction` is `1` (Write Only) or `0` (Read and Write).
+
+The mutex protects the synchronization state and operation against concurrent access through code paths that use the same mutex.
+
+```C:uiomem-ioctl-test.c
+    if ((fd = open("/dev/uiomem0", O_RDWR)) != -1) {
+        uint64_t sync_for_device = 1;
+        status = ioctl(fd, UIOMEM_IOCTL_SET_SYNC_FOR_DEVICE, &sync_for_device);
+        close(fd);
+    }
+```
+
+The 64-bit value passed to this ioctl can also encode `sync_offset`, `sync_size`, and `sync_direction`.
+
+```C:uiomem-ioctl-test.c
+    if ((fd = open("/dev/uiomem0", O_RDWR)) != -1) {
+        unsigned long sync_offset     = 0;
+        unsigned long sync_size       = 0x10000;
+        unsigned int  sync_direction  = 0;
+        uint64_t      sync_for_device = ((uint64_t)(sync_offset    & 0xFFFFFFFF) << 32) |
+                                        ((uint64_t)(sync_size      & 0xFFFFFFF0) <<  0) |
+                                        ((uint64_t)(sync_direction & 0x00000003) <<  2) |
+                                        0x00000001;
+        status = ioctl(fd, UIOMEM_IOCTL_SET_SYNC_FOR_DEVICE, &sync_for_device);
+        close(fd);
+    }
+```
+
+The sync_offset/sync_size/sync_direction specified by ```sync_for_device``` is temporary and does not affect the ```sync_offset``` or ```sync_size``` or ```sync_direction``` device files.
+
+### `UIOMEM_IOCTL_GET_DEV_INFO`
+
+This ioctl retrieves device information.
+
+The returned information includes the physical address and size of the I/O memory region, as well as its memory attributes.
+
+```C:uiomem-ioctl-test.c
+    if ((fd = open("/dev/uiomem0", O_RDWR)) != -1) {
+        uiomem_ioctl_dev_info dev_info = {0};
+        status = ioctl(fd, UIOMEM_IOCTL_GET_DEV_INFO, &dev_info);
+	if (status == 0) {
+            int      shareable = Get_UIOMEM_IOCTL_FLAGS_SHAREABLE(&dev_info);
+            int      cached    = GET_UIOMEM_IOCTL_FLAGS_CACHED(&dev_info);
+            int      coherent  = GET_UIOMEM_IOCTL_FLAGS_COHRENT(&dev_info);
+            uint64_t phys_addr = dev_info.addr;
+            uint64_t size      = dev_info.size;
+	}
+        close(fd);
+    }
+```
+
+### `UIOMEM_IOCTL_GET_SYNC`
+
+This ioctl retrieves the synchronization parameters, including `sync_offset`, `sync_size`, `sync_direction`, `sync_owner`, and `sync_mode`.
+
+```C:uiomem-ioctl-test.c
+    if ((fd = open("/dev/uiomem0", O_RDWR)) != -1) {
+        uiomem_ioctl_sync_args sync_args = {0};
+        status = ioctl(fd, UIOMEM_IOCTL_GET_SYNC, &sync_args);
+	if (status == 0) {
+            uint64_t sync_offset    = sync_args.offset;
+            uint64_t sync_size      = sync_args.size;
+            int      sync_direction = GET_UIOMEM_IOCTL_FLAGS_SYNC_DIR(&sync_args);
+            int      sync_owner     = GET_UIOMEM_IOCTL_FLAGS_SYNC_OWNER(&sync_args);
+            int      sync_mode      = GET_UIOMEM_IOCTL_FLAGS_SYNC_MODE(&sync_args);
+	}
+        close(fd);
+    }
+```
+
+### `UIOMEM_IOCTL_SET_SYNC`
+
+This ioctl sets `sync_offset`, `sync_size`, `sync_direction`, and `sync_mode`.
+
+```C:uiomem-ioctl-test.c
+    if ((fd = open("/dev/uiomem0", O_RDWR)) != -1) {
+        uiomem_ioctl_sync_args sync_args = {0};
+        uint64_t sync_offset    = 0;
+        uint64_t sync_size      = 0x10000;
+        int      sync_direction = 0;
+        sync_args.offset = sync_offset;
+        sync_args.size   = sync_size;
+        SET_UIOMEM_IOCTL_FLAGS_SYNC_DIR(&sync_args, sync_direction);
+        status = ioctl(fd, UIOMEM_IOCTL_SET_SYNC, &sync_args);
+        close(fd);
+    }
+```
+
+A synchronization command can also be specified in the `flags` field of `sync_args` to trigger synchronization for the CPU or the device.
+
+```C:uiomem-ioctl-test.c
+    if ((fd = open("/dev/uiomem0", O_RDWR)) != -1) {
+        uiomem_ioctl_sync_args sync_args = {0};
+        uint64_t sync_offset    = 0;
+        uint64_t sync_size      = 0x10000;
+        int      sync_direction = 0;
+        sync_args.offset = sync_offset;
+        sync_args.size   = sync_size;
+        SET_UIOMEM_IOCTL_FLAGS_SYNC_DIR(&sync_args, sync_direction);
+        SET_UIOMEM_IOCTL_FLAGS_SYNC_CMD(&sync_args, UIOMEM_IOCTL_FLAGS_SYNC_CMD_FOR_CPU);
+        status = ioctl(fd, UIOMEM_IOCTL_SET_SYNC, &sync_args);
+        close(fd);
+    }
+```
+
+#### Normal Synchronization
+
+When `SYNC_FAST` is not set, `UIOMEM_IOCTL_SET_SYNC` uses the normal synchronization path.
+
+- The driver acquires a mutex before updating the synchronization parameters and performing the synchronization operation.
+- The `sync_direction` value is updated only when the specified value is `0`, `1`, or `2`. Other values leave the current setting unchanged.
+- If the mode bits in the `flags` field of `uiomem_ioctl_sync_args` are zero, `sync_mode` is not updated.
+- The `sync_offset` value is updated using the `offset` field of `uiomem_ioctl_sync_args`.
+- If the `size` field of `uiomem_ioctl_sync_args` is zero, `sync_size` is not updated.
+- Depending on the synchronization command, the driver performs synchronization for the CPU or the device using the current synchronization parameters.
+
+The requested memory area is validated before the synchronization operation. If acquiring the mutex is interrupted, the ioctl returns `-ERESTARTSYS`.
+
+#### Fast Synchronization (`SYNC_FAST`)
+
+Starting with IOCTL version 3, the `SYNC_FAST` flag can be used with `UIOMEM_IOCTL_SET_SYNC` to perform cache synchronization with reduced overhead.
+
+When `SYNC_FAST` is set, the driver:
+
+- Skips mutex locking.
+- Does not update the synchronization parameters (`sync_offset`, `sync_size`, `sync_direction`, and `sync_mode`) or the synchronization state (`sync_owner`) maintained by the driver.
+- Uses the `offset`, `size`, and `SYNC_DIR` fields supplied in the ioctl arguments for the synchronization operation.
+
+The driver validates the requested memory area before performing synchronization.
+
+**Important considerations:**
+
+- Since mutex locking and synchronization state updates are skipped, the caller is responsible for coordinating CPU and device access and ensuring that synchronization operations do not conflict with other operations on the same memory area.
+- The synchronization parameters supplied with each request must be valid for the target memory area.
+- When `SYNC_FAST` is not set, the driver uses the normal synchronization path, including mutex locking and synchronization parameter updates.
+
+Use `SYNC_FAST` when the application manages synchronization explicitly and needs to reduce ioctl synchronization overhead.
+
+```C:uiomem-ioctl-test.c
+    if ((fd = open("/dev/uiomem0", O_RDWR)) != -1) {
+        uiomem_ioctl_sync_args sync_args = {0};
+        uint64_t sync_offset    = 0;
+        uint64_t sync_size      = 0x10000;
+        int      sync_direction = 0;
+        sync_args.offset = sync_offset;
+        sync_args.size   = sync_size;
+        SET_UIOMEM_IOCTL_FLAGS_SYNC_DIR(&sync_args, sync_direction);
+        SET_UIOMEM_IOCTL_FLAGS_SYNC_FAST(&sync_args, 1);
+        SET_UIOMEM_IOCTL_FLAGS_SYNC_CMD(&sync_args, UIOMEM_IOCTL_FLAGS_SYNC_CMD_FOR_CPU);
+        status = ioctl(fd, UIOMEM_IOCTL_SET_SYNC, &sync_args);
+        close(fd);
+    }
+```
 
 # Example using uiomem
 
