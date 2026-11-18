@@ -127,7 +127,7 @@ The driver creates a device for the specified I/O memory region.
 Both the start address and size of the I/O memory region must be aligned to the system page size.
 
 The number of static devices that can be created when loading the module using insmod (uiomem0, uiomem1, ...) can be configured at build time using CONFIG_UIOMEM_STATIC_DEVICE.
-The configurable range is 0 to 8, and the default value is 8.
+The configurable range is 0 to 8, and the default value is 4.
 
 ```console
 shell$ sudo insmod uiomem.ko uiomem0_addr=0x0400000000 uiomem0_size=0x00040000
