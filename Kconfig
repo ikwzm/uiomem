@@ -1,0 +1,54 @@
+#
+# uiomem
+#
+
+menuconfig UIOMEM
+	tristate "uiomem(User space mappable I/O memory)"
+	depends on OF
+	help
+	  Enable this to allow the uiomem to be built.
+	  uiomem is a Linux device driver for accessing a memory area 
+          outside the linux kernel management from user space.
+
+	  If you don't know what to do here, say N.
+
+config UIOMEM_CONFIG
+	bool "Configure uiomem by Kconfig"
+	depends on UIOMEM
+	default n
+	help
+	  If y, allows uiomem configuration by Kconfig.
+	  If n, build with
+	    UIOMEM_DEBUG=y
+	    UIOMEM_IOCTL=y
+	    UIOMEM_STATIC_DEVICE=8
+
+config UIOMEM_STATIC_DEVICE
+	int "Number of static uiomem devices (0-8)"
+	depends on UIOMEM_CONFIG
+	range 0 8
+	default 8
+	help
+	  Specify the number of static uiomem devices to be
+	  created when the uiomem driver module is loaded.
+
+	  These devices are created according to the module
+	  parameter UIOMEM_STATIC_DEVICE.
+
+	  The value must be between 0 and 8.
+	  If 0 is specified, no static devices are created.
+
+config UIOMEM_DEBUG
+	bool "uiomem enable debug report"
+	depends on UIOMEM_CONFIG
+	default y
+	help
+	  Enable debug report.
+
+config UIOMEM_IOCTL
+	bool "uiomem enable ioctl"
+	depends on UIOMEM_CONFIG
+	default y
+	help
+	  Enable ioctl.
+
