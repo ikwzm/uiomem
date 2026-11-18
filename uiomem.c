@@ -66,7 +66,7 @@ MODULE_DESCRIPTION("User space mappable io-memory device driver");
 MODULE_AUTHOR("ikwzm");
 MODULE_LICENSE("Dual BSD/GPL");
 
-#define DRIVER_VERSION     "1.4.0-alpha.3"
+#define DRIVER_VERSION     "1.4.0-alpha.4"
 #define DRIVER_NAME        "uiomem"
 #define DEVICE_NAME_FORMAT "uiomem%d"
 #define DEVICE_MAX_NUM      256
@@ -159,6 +159,7 @@ static struct class*  uiomem_sys_class = NULL;
 static int        info_enable = 1;
 module_param(     info_enable , int, S_IRUGO);
 MODULE_PARM_DESC( info_enable , "uiomem install/uninstall infomation enable");
+#define           CONFIG_INFO_ENABLE  (info_enable & 0x04)
 
 /**
  * DOC: Uiomem Object Structure
@@ -2632,6 +2633,17 @@ static void uiomem_cleanup(void)
 static int __init uiomem_init(void)
 {
     int retval = 0;
+
+    if (CONFIG_INFO_ENABLE) {
+        #define TO_STR(x) #x
+        #define NUM_TO_STR(x) TO_STR(x)
+        pr_info(DRIVER_NAME ": "
+                "DEVICE_MAX_NUM="      NUM_TO_STR(DEVICE_MAX_NUM)      ","
+                "UIOMEM_CONFIG="       NUM_TO_STR(UIOMEM_CONFIG)       ","
+                "UIOMEM_DEBUG="        NUM_TO_STR(UIOMEM_DEBUG)        ","
+                "IOCTL_VERSION="       NUM_TO_STR(IOCTL_VERSION)       ","
+                "STATIC_DEVICE_NUM="   NUM_TO_STR(STATIC_DEVICE_NUM)    );
+    }
 
     ida_init(&uiomem_device_ida);
 #if (USE_DEVICE_LIST == 1)
