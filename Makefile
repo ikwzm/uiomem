@@ -14,6 +14,9 @@ endif
 ifdef UIOMEM_IOCTL
 ccflags-y            += -DUIOMEM_IOCTL=$(UIOMEM_IOCTL)
 endif
+ifdef UIOMEM_STATIC_DEVICE
+ccflags-y            += -DUIOMEM_STATIC_DEVICE=$(UIOMEM_STATIC_DEVICE)
+endif
 
 #
 # For out of kernel tree variables
@@ -33,6 +36,11 @@ ifeq ($(CONFIG_UIOMEM_IOCTL), y)
 CONFIG_OPTIONS += UIOMEM_IOCTL=2
 else
 CONFIG_OPTIONS += UIOMEM_IOCTL=0
+endif
+ifneq ($(filter 0 1 2 3 4 5 6 7 8,$(CONFIG_UIOMEM_STATIC_DEVICE)),)
+CONFIG_OPTIONS += UIOMEM_STATIC_DEVICE=$(CONFIG_UIOMEM_STATIC_DEVICE)
+else
+CONFIG_OPTIONS += UIOMEM_STATIC_DEVICE=0
 endif
 
 HOST_ARCH ?= $(shell uname -m | sed $(SUBARCH_SCRIPT))

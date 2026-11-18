@@ -66,7 +66,7 @@ MODULE_DESCRIPTION("User space mappable io-memory device driver");
 MODULE_AUTHOR("ikwzm");
 MODULE_LICENSE("Dual BSD/GPL");
 
-#define DRIVER_VERSION     "1.4.0-alpha.1"
+#define DRIVER_VERSION     "1.4.0-alpha.2"
 #define DRIVER_NAME        "uiomem"
 #define DEVICE_NAME_FORMAT "uiomem%d"
 #define DEVICE_MAX_NUM      256
@@ -109,10 +109,32 @@ MODULE_LICENSE("Dual BSD/GPL");
 #define IOCTL_VERSION       0
 #endif
 
+#if     (UIOMEM_CONFIG == 0)
+#define STATIC_DEVICE_NUM   8
+#elif   defined(UIOMEM_STATIC_DEVICE) && (UIOMEM_STATIC_DEVICE >  8)
+#warning "UIOMEM_STATIC_DEVICE must be 0 and 8"
+#define STATIC_DEVICE_NUM   8
+#elif   defined(UIOMEM_STATIC_DEVICE) && (UIOMEM_STATIC_DEVICE >= 0)
+#define STATIC_DEVICE_NUM   UIOMEM_STATIC_DEVICE
+#elif   defined(CONFIG_UIOMEM_STATIC_DEVICE) && (CONFIG_UIOMEM_STATIC_DEVICE >  8)
+#warning "CONFIG_UIOMEM_STATIC_DEVICE must be 0 and 8"
+#define STATIC_DEVICE_NUM   8
+#elif   defined(CONFIG_UIOMEM_STATIC_DEVICE) && (CONFIG_UIOMEM_STATIC_DEVICE >= 0)
+#define STATIC_DEVICE_NUM   CONFIG_UIOMEM_STATIC_DEVICE
+#else
+#define STATIC_DEVICE_NUM   0
+#endif
+
 #if     (UIOMEM_DEBUG == 1)
 #define UIOMEM_DEBUG_CHECK(this,debug) (this->debug)
 #else
 #define UIOMEM_DEBUG_CHECK(this,debug) (0)
+#endif
+
+#if     (STATIC_DEVICE_NUM > 0)
+#define USE_DEVICE_LIST 1
+#else
+#define USE_DEVICE_LIST 0
 #endif
 
 #ifndef U64_MAX
@@ -1627,6 +1649,7 @@ static void uiomem_object_put(struct uiomem_object* this)
 /**
  * struct uiomem_device_entry - uiomem platform device structure.
  */
+#if (USE_DEVICE_LIST == 1)
 struct uiomem_device_entry {
     struct device*       dev;
     struct device*       parent;
@@ -1634,13 +1657,16 @@ struct uiomem_device_entry {
     void                 (*post_remove)(struct device* dev);
     struct list_head     list;
 };
+#endif
 
 /**
  * uiomem_device_list        - list of uiomem device entry structure.
  * uiomem_device_list_sem    - semaphore of uiomem platform device list.
  */
+#if (USE_DEVICE_LIST == 1)
 static struct list_head uiomem_device_list;
 static DEFINE_MUTEX(    uiomem_device_list_sem);
+#endif
 
 /**
  * uiomem_get_device_name_property()  - Get "device-name"  property from uiomem device.
@@ -1722,6 +1748,7 @@ DEFINE_UIOMEM_OPTION(coherent , bool, 2, 2)
  * @id:         device id or negative integer.
  * Return:      Pointer to the found udmabuf device entry or NULL.
  */
+#if (USE_DEVICE_LIST == 1)
 static struct uiomem_device_entry* uiomem_device_list_search(struct device *dev, const char* name, int id)
 {
     struct uiomem_device_entry* entry;
@@ -1758,6 +1785,7 @@ static struct uiomem_device_entry* uiomem_device_list_search(struct device *dev,
     mutex_unlock(&uiomem_device_list_sem);
     return found_entry;
 }
+#endif
 
 /**
  * uiomem_device_list_create_entry() - Create uiomem device entry and add to list.
@@ -1773,6 +1801,7 @@ static struct uiomem_device_entry* uiomem_device_list_search(struct device *dev,
  * @post_remove post function when remove entry from udmabuf device list or NULL.
  * Return:      pointer to the udmabuf device entry or NULL.
  */
+#if (USE_DEVICE_LIST == 1)
 static struct uiomem_device_entry* uiomem_device_list_create_entry(struct device *dev, struct device *parent, const char* name, int id, u64 addr, u64 size, u64 option, void (*prep_remove)(struct device*), void (*post_remove)(struct device*))
 {                              
     struct uiomem_device_entry* entry  = NULL;
@@ -1853,11 +1882,13 @@ static struct uiomem_device_entry* uiomem_device_list_create_entry(struct device
     }
     return ERR_PTR(retval);
 }
+#endif
     
 /**
  * uiomem_device_list_delete_entry() - Delete uiomem device entry from list.
  * @entry:      Pointer to the udmabuf device entry.
  */
+#if (USE_DEVICE_LIST == 1)
 static void uiomem_device_list_delete_entry(struct uiomem_device_entry* entry)
 {
     mutex_lock(&uiomem_device_list_sem);
@@ -1866,11 +1897,13 @@ static void uiomem_device_list_delete_entry(struct uiomem_device_entry* entry)
     mutex_unlock(&uiomem_device_list_sem);
     kfree(entry);
 }
+#endif
 
 /**
  * uiomem_device_list_remove_entry() - Remove uiomem device entry from list with remove functions.
  * @entry:      Pointer to the udmabuf device entry.
  */
+#if (USE_DEVICE_LIST == 1)
 static void uiomem_device_list_remove_entry(struct uiomem_device_entry* entry)
 {
     struct device* dev    = entry->dev;
@@ -1885,17 +1918,20 @@ static void uiomem_device_list_remove_entry(struct uiomem_device_entry* entry)
     if (parent)
         put_device(parent);
 }
+#endif
 
 /**
  * uiomem_device_list_cleanup() - Remove all uiomem device entry from list.
  */
 static void uiomem_device_list_cleanup(void)
 {
+#if (USE_DEVICE_LIST == 1)
     struct uiomem_device_entry* entry;
     while(!list_empty(&uiomem_device_list)) {
         entry = list_first_entry(&uiomem_device_list, typeof(*(entry)), list);
         uiomem_device_list_remove_entry(entry);
     }
+#endif
 }
 
 /**
@@ -1914,6 +1950,7 @@ static void uiomem_device_list_cleanup(void)
  * uiomem_platform_device_del() - Delete uiomem platform device before remove from device list.
  * @dev:        handle to the device structure.
  */
+#if (USE_DEVICE_LIST == 1)
 static void uiomem_platform_device_del(struct device* dev)
 {
     /*
@@ -1921,15 +1958,18 @@ static void uiomem_platform_device_del(struct device* dev)
      */
     platform_device_del(to_platform_device(dev));
 }
+#endif
 
 /**
  * uiomem_platform_device_put() - Put uiomem platform device after remove from device list.
  * @dev:        handle to the device structure.
  */
+#if (USE_DEVICE_LIST == 1)
 static void uiomem_platform_device_put(struct device* dev)
 {
     platform_device_put(to_platform_device(dev));
 }
+#endif
 
 /**
  * uiomem_platform_device_create() - Create uiomem platform device and add to device list.
@@ -1940,6 +1980,7 @@ static void uiomem_platform_device_put(struct device* dev)
  * @option      option.
  * Return:      pointer to struct device* dev(>=0) or error status(<0).
  */
+#if (USE_DEVICE_LIST == 1)
 static struct device* uiomem_platform_device_create(const char* name, int id, u64 addr, u64 size, u64 option)
 {
     struct platform_device*     pdev   = NULL;
@@ -2012,6 +2053,7 @@ static struct device* uiomem_platform_device_create(const char* name, int id, u6
     }
     return ERR_PTR(retval);
 }
+#endif
 
 /**
  * of_property_read_ulong() -  Find and read a unsigned long intger from a property.
@@ -2340,14 +2382,30 @@ static int uiomem_platform_device_probe(struct device *dev, struct resource* res
         ida_simple_get(&uiomem_device_ida, __num, __num+1, GFP_KERNEL); \
     }
 
+#if (STATIC_DEVICE_NUM > 0)
 DEFINE_UIOMEM_STATIC_DEVICE_PARAM(0);
+#endif
+#if (STATIC_DEVICE_NUM > 1)
 DEFINE_UIOMEM_STATIC_DEVICE_PARAM(1);
+#endif
+#if (STATIC_DEVICE_NUM > 2)
 DEFINE_UIOMEM_STATIC_DEVICE_PARAM(2);
+#endif
+#if (STATIC_DEVICE_NUM > 3)
 DEFINE_UIOMEM_STATIC_DEVICE_PARAM(3);
+#endif
+#if (STATIC_DEVICE_NUM > 4)
 DEFINE_UIOMEM_STATIC_DEVICE_PARAM(4);
+#endif
+#if (STATIC_DEVICE_NUM > 5)
 DEFINE_UIOMEM_STATIC_DEVICE_PARAM(5);
+#endif
+#if (STATIC_DEVICE_NUM > 6)
 DEFINE_UIOMEM_STATIC_DEVICE_PARAM(6);
+#endif
+#if (STATIC_DEVICE_NUM > 7)
 DEFINE_UIOMEM_STATIC_DEVICE_PARAM(7);
+#endif
 
 /**
  * uiomem_static_device_create() - Create uiomem static device and add to list.
@@ -2358,6 +2416,7 @@ DEFINE_UIOMEM_STATIC_DEVICE_PARAM(7);
  * @option      option.
  * Return:      Success(=0) or error status(<0).
  */
+#if (STATIC_DEVICE_NUM > 0)
 static int uiomem_static_device_create(const char* name, int id, u64 addr, u64 size, u64 option)
 {
     struct device* dev;
@@ -2369,20 +2428,37 @@ static int uiomem_static_device_create(const char* name, int id, u64 addr, u64 s
     }
     return retval;
 }
+#endif
 
 /**
  * uiomem_static_device_reserve_minor_number_all() - Reserve uiomem static device's minor-number.
  */
 static void uiomem_static_device_reserve_minor_number_all(void)
 {
+#if (STATIC_DEVICE_NUM > 0)
     CALL_UIOMEM_STATIC_DEVICE_RESERVE_MINOR_NUMBER(0);
+#endif
+#if (STATIC_DEVICE_NUM > 1)
     CALL_UIOMEM_STATIC_DEVICE_RESERVE_MINOR_NUMBER(1);
+#endif
+#if (STATIC_DEVICE_NUM > 2)
     CALL_UIOMEM_STATIC_DEVICE_RESERVE_MINOR_NUMBER(2);
+#endif
+#if (STATIC_DEVICE_NUM > 3)
     CALL_UIOMEM_STATIC_DEVICE_RESERVE_MINOR_NUMBER(3);
+#endif
+#if (STATIC_DEVICE_NUM > 4)
     CALL_UIOMEM_STATIC_DEVICE_RESERVE_MINOR_NUMBER(4);
+#endif
+#if (STATIC_DEVICE_NUM > 5)
     CALL_UIOMEM_STATIC_DEVICE_RESERVE_MINOR_NUMBER(5);
+#endif
+#if (STATIC_DEVICE_NUM > 6)
     CALL_UIOMEM_STATIC_DEVICE_RESERVE_MINOR_NUMBER(6);
+#endif
+#if (STATIC_DEVICE_NUM > 7)
     CALL_UIOMEM_STATIC_DEVICE_RESERVE_MINOR_NUMBER(7);
+#endif
 }
 
 /**
@@ -2391,14 +2467,30 @@ static void uiomem_static_device_reserve_minor_number_all(void)
 static int  uiomem_static_device_create_all(void)
 {
     int  status = 0;
+#if (STATIC_DEVICE_NUM > 0)
     CALL_UIOMEM_STATIC_DEVICE_CREATE(0);
+#endif
+#if (STATIC_DEVICE_NUM > 1)
     CALL_UIOMEM_STATIC_DEVICE_CREATE(1);
+#endif
+#if (STATIC_DEVICE_NUM > 2)
     CALL_UIOMEM_STATIC_DEVICE_CREATE(2);
+#endif
+#if (STATIC_DEVICE_NUM > 3)
     CALL_UIOMEM_STATIC_DEVICE_CREATE(3);
+#endif
+#if (STATIC_DEVICE_NUM > 4)
     CALL_UIOMEM_STATIC_DEVICE_CREATE(4);
+#endif
+#if (STATIC_DEVICE_NUM > 5)
     CALL_UIOMEM_STATIC_DEVICE_CREATE(5);
+#endif
+#if (STATIC_DEVICE_NUM > 6)
     CALL_UIOMEM_STATIC_DEVICE_CREATE(6);
+#endif
+#if (STATIC_DEVICE_NUM > 7)
     CALL_UIOMEM_STATIC_DEVICE_CREATE(7);
+#endif
     return status;
 }
 
@@ -2538,7 +2630,9 @@ static int __init uiomem_init(void)
     int retval = 0;
 
     ida_init(&uiomem_device_ida);
+#if (USE_DEVICE_LIST == 1)
     INIT_LIST_HEAD(&uiomem_device_list);
+#endif
 
     retval = alloc_chrdev_region(&uiomem_device_number, 0, DEVICE_MAX_NUM, DRIVER_NAME);
     if (retval != 0) {
