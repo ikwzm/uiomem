@@ -41,13 +41,13 @@ The start address and size of the I/O memory region can be specified through mod
 This repository contains a [Makefie](./Makefile).
 Makefile has the following Parameters:
 
-| Parameter Name                       | Description                  | Default Value                        |
+| Parameter Name                       | Description                       | Default Value                        |
 |--------------------------------------|-----------------------------------|--------------------------------------|
 | ARCH                                 | Architecture Name                 | `$(shell uname -m \| sed -e s/arm.*/arm/ -e s/aarch64.*/arm64/ -e s/riscv.*/riscv/ )` |
 | KERNEL_SRC                           | Kernel Source Directory           | `/lib/modules/$(shell uname -r)/build` |
-| CONFIG_UIOMEM_STATIC_DEVICE          | Number of static devices (0 to 8) | 8 |
 | CONFIG_UIOMEM_DEBUG                  | Enable debug report               | y |
 | CONFIG_UIOMEM_IOCTL                  | Enable ioctl                      | y |
+| CONFIG_UIOMEM_STATIC_DEVICE          | Number of static devices (0 to 8) | 4 |
 
 ### Cross Compile
 
