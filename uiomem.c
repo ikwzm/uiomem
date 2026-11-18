@@ -66,7 +66,7 @@ MODULE_DESCRIPTION("User space mappable io-memory device driver");
 MODULE_AUTHOR("ikwzm");
 MODULE_LICENSE("Dual BSD/GPL");
 
-#define DRIVER_VERSION     "1.4.0-alpha.4"
+#define DRIVER_VERSION     "1.4.0-alpha.5"
 #define DRIVER_NAME        "uiomem"
 #define DEVICE_NAME_FORMAT "uiomem%d"
 #define DEVICE_MAX_NUM      256
@@ -1736,7 +1736,9 @@ static inline int uiomem_get_option_property(struct device *dev, u64* value)
 #define DEFINE_UIOMEM_OPTION(name,type,lo,hi)             \
 static inline type uiomem_get_option_ ## name(u64 option) \
 {                                                         \
-    const u64 mask = ((1UL << ((hi)-(lo)+1))-1);          \
+    const int sft  = (hi)-(lo)+1;                         \
+    const u64 mask = (sft >= 64) ? ~((u64)0) :            \
+                                   (((u64)1 << sft)-1);   \
     return (type)((option >> (lo)) & mask);               \
 }
 DEFINE_UIOMEM_OPTION(shareable, bool, 0, 0)
