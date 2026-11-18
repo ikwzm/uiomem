@@ -66,7 +66,7 @@ MODULE_DESCRIPTION("User space mappable io-memory device driver");
 MODULE_AUTHOR("ikwzm");
 MODULE_LICENSE("Dual BSD/GPL");
 
-#define DRIVER_VERSION     "1.4.0-alpha.2"
+#define DRIVER_VERSION     "1.4.0-alpha.3"
 #define DRIVER_NAME        "uiomem"
 #define DEVICE_NAME_FORMAT "uiomem%d"
 #define DEVICE_MAX_NUM      256
@@ -98,13 +98,13 @@ MODULE_LICENSE("Dual BSD/GPL");
 #endif
 
 #if     (UIOMEM_CONFIG == 0)
-#define IOCTL_VERSION       2
-#elif   defined(UIOMEM_IOCTL) && (UIOMEM_IOCTL >  2)
-#define IOCTL_VERSION       2
+#define IOCTL_VERSION       3
+#elif   defined(UIOMEM_IOCTL) && (UIOMEM_IOCTL >  3)
+#define IOCTL_VERSION       3
 #elif   defined(UIOMEM_IOCTL) && (UIOMEM_IOCTL >= 0)
 #define IOCTL_VERSION       UIOMEM_IOCTL
 #elif   defined(CONFIG_UIOMEM_IOCTL)
-#define IOCTL_VERSION       2
+#define IOCTL_VERSION       3
 #else
 #define IOCTL_VERSION       0
 #endif
@@ -1010,7 +1010,8 @@ typedef struct {
     char     sync_operation[16];
 } uiomem_ioctl_drv_info;
 
-DEFINE_UIOMEM_IOCTL_FLAGS(IOCTL_VERSION, uiomem_ioctl_drv_info ,  0,  7)
+DEFINE_UIOMEM_IOCTL_FLAGS(IOCTL_VERSION    , uiomem_ioctl_drv_info ,  0,  7)
+DEFINE_UIOMEM_IOCTL_FLAGS(STATIC_DEVICE_NUM, uiomem_ioctl_drv_info ,  8, 15)
 
 typedef struct {
     uint64_t flags;
@@ -1071,6 +1072,9 @@ static long uiomem_device_file_ioctl(struct file* file, unsigned int cmd, unsign
         case UIOMEM_IOCTL_GET_DRV_INFO: {
             uiomem_ioctl_drv_info drv_info = {0};
             SET_UIOMEM_IOCTL_FLAGS_IOCTL_VERSION(&drv_info, IOCTL_VERSION);
+#if (IOCTL_VERSION >= 3)
+            SET_UIOMEM_IOCTL_FLAGS_STATIC_DEVICE_NUM(&drv_info, STATIC_DEVICE_NUM);
+#endif
             if (strscpy(&drv_info.version[0], DRIVER_VERSION, sizeof(drv_info.version)) < 0) {
                 result = -EFAULT;
                 break;

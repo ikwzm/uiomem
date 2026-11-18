@@ -57,7 +57,8 @@ typedef struct {
     char     sync_operation[16];
 } uiomem_ioctl_drv_info;
 
-DEFINE_UIOMEM_IOCTL_FLAGS(IOCTL_VERSION, uiomem_ioctl_drv_info ,  0,  7)
+DEFINE_UIOMEM_IOCTL_FLAGS(IOCTL_VERSION    , uiomem_ioctl_drv_info ,  0,  7)
+DEFINE_UIOMEM_IOCTL_FLAGS(STATIC_DEVICE_NUM, uiomem_ioctl_drv_info ,  8, 15)
 
 typedef struct {
     uint64_t flags;
